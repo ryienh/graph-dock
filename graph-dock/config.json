@@ -1,0 +1,11 @@
+{
+    "raw_data_path": "../data/d4_table_name_smi_energy_hac_lte_25_title.csv",
+    "clean_data_path": "../data/d4_dock_data_50k.csv",
+    "data_load_type": "gpu",
+    "model": {
+        "checkpoint": "./checkpoints/gnn/",
+        "learning_rate": 1e-3,
+        "num_epochs": 4,
+        "batch_size": 32
+    }
+}
