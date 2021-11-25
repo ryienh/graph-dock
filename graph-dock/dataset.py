@@ -9,21 +9,23 @@ For questions or comments, contact rhosseini@anl.gov
 
 import numpy as np
 import pandas as pd
-import torch
+import tqdm
 from sklearn.preprocessing import normalize
 from pysmiles import read_smiles
+from mendeleev import element
+import os
 
-from torch_geometric.utils.covert import from_networkx
+import torch
+from torch_geometric.utils import from_networkx
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
 
-from utils import config
+from utils import config, suppress_stdout_stderr
 
 
-def get_train_val_test_loaders():
+def get_train_val_test_loaders(batch_size=config("model.batch_size")):
     tr, va, te = get_train_val_test_dataset()
 
-    batch_size = config("model.batch_size")
     tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, num_workers=4)
     va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, num_workers=4)
     te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, num_workers=4)
@@ -73,7 +75,7 @@ class ChemDataset(Dataset):
     def __getitem__(self, idx):
 
         # first attempt will be to fit data in GPU memory
-        return torch.from_numpy(self.X[idx]).float(), torch.tensor(self.y[idx]).long()
+        return torch.from_numpy(self.X[idx]), torch.tensor(self.y[idx]).long()
 
     def _load_data_gpu(self):
         """
@@ -108,14 +110,37 @@ class ChemDataset(Dataset):
         """
         # TODO: fix list
         X = []
-        for molecule in smiles_list:
-            x = read_smiles(
-                molecule,
-                explicit_hydrogen=True,
-                zero_order_bonds=True,
-                reinterpret_aromatic=True,
+        for molecule in tqdm.tqdm(smiles_list):
+
+            # suppresses warnings regarding stereochemistry info
+            with suppress_stdout_stderr():
+                x = read_smiles(
+                    molecule,
+                    explicit_hydrogen=False,
+                    zero_order_bonds=True,
+                    reinterpret_aromatic=True,
+                )
+
+            # cycle through network and preprocess TODO: optimize
+            for idx in range(len(list(x.nodes))):
+
+                # represent element by atomic number (using medeleev)
+                x.nodes[idx]["element"] = element(x.nodes[idx]["element"]).atomic_number
+
+                # cast aromatic bool to int
+                x.nodes[idx]["aromatic"] = int(x.nodes[idx]["aromatic"])
+
+                # remove stereochemical information - FIXME: discuss sols
+                try:
+                    del x.nodes[idx]["stereo"]
+                except Exception:
+                    pass
+
+            # convert to torch and append to list
+            x = from_networkx(
+                x, group_node_attrs=["element", "charge", "aromatic", "hcount"]
             )
-            x = from_networkx(x)
+
             X.append(x)
 
 
