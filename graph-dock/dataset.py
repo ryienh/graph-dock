@@ -12,6 +12,7 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import normalize
 from pysmiles import read_smiles
+
 from torch_geometric.utils.covert import from_networkx
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
@@ -53,6 +54,8 @@ class ChemDataset(Dataset):
         self.data = pd.read_csv(config("clean_data_path"))
         self.load_type = config("data_load_type")
 
+        self.X = None
+        self.y = None
         if self.load_type in ["cpu", "filesys"]:
             raise ValueError("Load type {} not yet implemented".format(self.load_type))
         elif self.load_type != "gpu":
@@ -106,7 +109,13 @@ class ChemDataset(Dataset):
         # TODO: fix list
         X = []
         for molecule in smiles_list:
-            x = from_networkx(read_smiles(molecule))
+            x = read_smiles(
+                molecule,
+                explicit_hydrogen=True,
+                zero_order_bonds=True,
+                reinterpret_aromatic=True,
+            )
+            x = from_networkx(x)
             X.append(x)
 
 

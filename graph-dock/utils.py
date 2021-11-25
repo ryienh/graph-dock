@@ -6,7 +6,7 @@ For questions or comments, contact rhosseini@anl.gov
 import os
 
 
-def config(attr, fname=os.path.join("./", "config.json")):
+def config(attr, fname=os.path.join("./", "graph-dock", "config.json")):
     """
     Retrieves the queried attribute value from the config file. Loads the
     config file on first call.
