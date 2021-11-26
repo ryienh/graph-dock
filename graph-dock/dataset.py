@@ -51,6 +51,8 @@ class ChemDataset(Dataset):
         if partition not in ["train", "val", "test"]:
             raise ValueError("Partition {} does not exist".format(partition))
 
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         np.random.seed(0)
         self.partition = partition
         self.data = pd.read_csv(config("clean_data_path"))
@@ -101,6 +103,10 @@ class ChemDataset(Dataset):
 
         # normalize scores
         y = normalize(y.reshape(-1, 1), axis=0)
+
+        # move X and y to GPU
+        X.to(self.device)
+        y.to(self.device)
 
         return X, y
 
