@@ -1,31 +1,66 @@
 import torch
-import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
-
+from torch.nn import Linear, ReLU, Dropout
+from torch_geometric.nn import GINConv, global_mean_pool
 from utils import config
 
 """
 Graph convolutional network for graph regression task
+    Partially adapted from: https://web.stanford.edu/class/cs224w/index.html
+
+For questions or comments, contact rhosseini@anl.gov
 """
 
 
-class GCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = GCNConv(
-            dataset.num_node_features, config("model.hidden_layer_size_1")
+class GINREG(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers):
+
+        super(GINREG, self).__init__()
+
+        self.dropout = dropout
+        self.num_layers = num_conv_layers
+
+        self.convs = torch.nn.ModuleList()
+        self.convs.append(self.build_conv_model(input_dim, hidden_dim))
+        self.lns = torch.nn.ModuleList()
+        self.lns.append(torch.nn.LayerNorm(hidden_dim))
+        self.lns.append(torch.nn.LayerNorm(hidden_dim))
+        for _ in range(2):
+            self.convs.append(self.build_conv_model(hidden_dim, hidden_dim))
+
+        # post-message-passing
+        self.post_mp = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.Dropout(self.dropout),
+            torch.nn.Linear(hidden_dim, 1),
         )
-        self.conv2 = GCNConv(
-            config("model.hidden_layer_size_1"), config("model.hidden_layer_size_2")
+
+    def build_conv_model(self, input_dim, hidden_dim):
+        return GINConv(
+            torch.nn.Sequential(
+                torch.nn.Linear(input_dim, hidden_dim),
+                torch.nn.ReLU(),
+                torch.nn.Linear(hidden_dim, hidden_dim),
+            )
         )
-        self.conv3 = GCNConv(config("model.hidden_layer_size_2"), 1)
 
     def forward(self, data):
-        x, edge_index = data.x, data.edge_index
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        if data.num_node_features == 0:
+            print("Warning: No node features detected.")
+            x = torch.ones(data.num_nodes, 1)
 
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, training=self.training)
-        x = self.conv2(x, edge_index)
+        for i in range(self.num_layers):
+            x = self.convs[i](x, edge_index)
+            # emb = x
+            x = torch.nn.ReLU(x)
+            x = torch.nn.Dropout(x, p=self.dropout, training=self.training)
+            if not i == self.num_layers - 1:
+                x = self.lns[i](x)
 
-        return F.log_softmax(x, dim=1)
+        # pooling
+        x = global_mean_pool(x, batch)
+
+        # MLP
+        x = self.post_mp(x)
+
+        return x
