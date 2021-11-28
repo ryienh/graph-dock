@@ -9,16 +9,17 @@ For questions or comments, contact rhosseini@anl.gov
 
 import numpy as np
 import pandas as pd
+import pickle
 import tqdm
+import os
 from sklearn.preprocessing import normalize
 from pysmiles import read_smiles
 from mendeleev import element
-import os
 
 import torch
 from torch_geometric.utils import from_networkx
-from torch.utils.data.dataset import Dataset
-from torch.utils.data.dataloader import DataLoader
+from torch_geometric.data import InMemoryDataset
+from torch_geometric.loader import DataLoader
 
 from utils import config, suppress_stdout_stderr
 
@@ -34,55 +35,72 @@ def get_train_val_test_loaders(batch_size=config("model.batch_size")):
 
 
 def get_train_val_test_dataset():
-    tr = ChemDataset("train")
-    va = ChemDataset("val")
-    te = ChemDataset("test")
+    root = config("data_dir")
+    tr = ChemDataset(root, "train")
+    va = ChemDataset(root, "val")
+    te = ChemDataset(root, "test")
 
     return tr, va, te
 
 
-class ChemDataset(Dataset):
-    def __init__(self, partition):
+class ChemDataset(InMemoryDataset):
+    def __init__(self, root, partition, transform=None, pre_transform=None):
         """
         Reads in necessary data from disk.
         """
-        super().__init__()
 
         if partition not in ["train", "val", "test"]:
             raise ValueError("Partition {} does not exist".format(partition))
 
+        self.partition = partition
+
+        super().__init__(root, transform, pre_transform)
+
+        if partition == "train":
+            self.data, self.slices = torch.load(self.processed_paths[0])
+
+        elif partition == "val":
+            self.data, self.slices = torch.load(self.processed_paths[1])
+
+        elif partition == "test":
+            self.data, self.slices = torch.load(self.processed_paths[2])
+
+    @property
+    def raw_file_names(self):
+        return ["d4_dock_data_50k.csv"]
+
+    @property
+    def processed_file_names(self):
+        # Note: currently processess all partitions if one is missing
+        return ["train.pt", "val.pt", "test.pt"]
+
+    # TODO: implement auto download of dataset
+    # def download(self):
+
+    def process(self):
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         np.random.seed(0)
-        self.partition = partition
         self.data = pd.read_csv(config("clean_data_path"))
-        self.load_type = config("data_load_type")
 
-        self.X = None
-        self.y = None
-        if self.load_type in ["cpu", "filesys"]:
-            raise ValueError("Load type {} not yet implemented".format(self.load_type))
-        elif self.load_type != "gpu":
-            raise ValueError("{} is not a valid load type.".format(self.load_type))
-        else:
-            self.X, self.y = self._load_data_gpu()
+        data_list = self._load_data_mem()
 
-        scale = 0.8 if self.partition == "train" else 0.1  # TODO: fix hardcode
+        data, slices = self.collate(data_list)
 
-        self.length = int(len(self.data) * scale)
+        if self.partition == "train":
+            torch.save((data, slices), self.processed_paths[0])
+        elif self.partition == "val":
+            torch.save((data, slices), self.processed_paths[1])
+        elif self.partition == "test":
+            torch.save((data, slices), self.processed_paths[2])
 
-    def __len__(self):
-        return self.length - 1
-
-    def __getitem__(self, idx):
-
-        # first attempt will be to fit data in GPU memory
-        return torch.from_numpy(self.X[idx]), torch.tensor(self.y[idx]).long()
-
-    def _load_data_gpu(self):
+    def _load_data_mem(self):
         """
-        Loads a single data partition from file
+        Loads a single data partition from file to memory
         """
+
+        # TODO: port to pygeo system of transform, pre_transform, pre_filter
 
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
@@ -104,17 +122,17 @@ class ChemDataset(Dataset):
         # normalize scores
         y = normalize(y.reshape(-1, 1), axis=0)
 
-        # move X and y to GPU
-        X.to(self.device)
-        y.to(self.device)
+        assert len(X) == len(y)
 
-        return X, y
+        for graph, label in zip(X, y):
+            graph.y = label
+
+        return X
 
     def _smiles_2_graph(self, smiles_list):
         """
         Converts list of smiles strings to Pytorch geometric graphs
         """
-        # TODO: fix list
         X = []
         for molecule in tqdm.tqdm(smiles_list):
 
@@ -149,8 +167,10 @@ class ChemDataset(Dataset):
 
             X.append(x)
 
+        return X
+
 
 # test dataset.py
 if __name__ == "__main__":
-    print("Testing dataset.py...")
-    get_train_val_test_loaders()
+    print("Procesing dataset...")
+    tr_loader, val_loader, test_loader = get_train_val_test_loaders()
