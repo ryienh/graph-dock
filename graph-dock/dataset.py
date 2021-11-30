@@ -25,9 +25,9 @@ from utils import config, suppress_stdout_stderr
 def get_train_val_test_loaders(batch_size=config("model.batch_size")):
     tr, va, te = get_train_val_test_dataset()
 
-    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, num_workers=4)
-    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, num_workers=4)
-    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, num_workers=4)
+    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True)
+    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False)
+    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False)
 
     return tr_loader, va_loader, te_loader
 
