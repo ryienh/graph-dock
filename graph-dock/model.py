@@ -1,7 +1,6 @@
 import torch
-from torch.nn import Linear, ReLU, Dropout
 from torch_geometric.nn import GINConv, global_mean_pool
-from utils import config
+
 
 """
 Graph convolutional network for graph regression task
@@ -26,6 +25,9 @@ class GINREG(torch.nn.Module):
         self.lns.append(torch.nn.LayerNorm(hidden_dim))
         for _ in range(2):
             self.convs.append(self.build_conv_model(hidden_dim, hidden_dim))
+
+        self.conv_dropout = torch.nn.Dropout(p=self.dropout)
+        self.ReLU = torch.nn.ReLU()
 
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
@@ -52,8 +54,8 @@ class GINREG(torch.nn.Module):
         for i in range(self.num_layers):
             x = self.convs[i](x, edge_index)
             # emb = x
-            x = torch.nn.ReLU(x)
-            x = torch.nn.Dropout(x, p=self.dropout, training=self.training)
+            x = self.ReLU(x)
+            x = self.conv_dropout(x)
             if not i == self.num_layers - 1:
                 x = self.lns[i](x)
 
@@ -64,3 +66,6 @@ class GINREG(torch.nn.Module):
         x = self.post_mp(x)
 
         return x
+
+    def loss(self, pred, label):
+        return torch.nn.functional.mse_loss(pred, label)
