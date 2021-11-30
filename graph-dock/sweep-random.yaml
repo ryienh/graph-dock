@@ -1,0 +1,19 @@
+program: train.py
+method: random
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  learning_rate:
+    values: [1e-4, 1e-3, 1e-2]
+  batch_size:
+    values: [32, 64, 128]
+  hidden_dim:
+    values: [32, 64, 128]
+  num_conv_layers:
+    values: [1, 3, 5, 10]
+  dropout:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+  epochs:
+    value: 200
+    
