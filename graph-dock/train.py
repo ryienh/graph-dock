@@ -85,6 +85,8 @@ def main():
             "architecture": config("model.name"),
             "batch_size": config("model.batch_size"),
             "hidden_dim": config("model.hidden_dim"),
+            "num_conv_layers": config("model.num_conv_layers"),
+            "dropout": config("model.dropout"),
             "dataset": config("dataset_id"),
         },
     )
@@ -101,7 +103,7 @@ def main():
         dropout=config("model.dropout"),
         num_conv_layers=config("model.num_conv_layers"),
     )
-    wandb.watch(model)
+    wandb.watch(model, log_freq=100)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config("model.learning_rate"))
 
