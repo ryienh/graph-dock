@@ -11,6 +11,7 @@ import torch
 from dataset import get_train_val_test_loaders
 from model import GINREG
 import tqdm
+import wandb
 
 from utils import config, restore_checkpoint, save_checkpoint
 
@@ -55,8 +56,6 @@ def _evaluate_epoch(
     train_loss,
 ):
 
-    # TODO add w&b logging
-
     model.eval()
 
     running_loss = 0
@@ -78,6 +77,18 @@ def _evaluate_epoch(
 
 
 def main():
+    # init wandb logger
+    wandb.init(
+        project="graph-dock",
+        config={
+            "learning_rate": config("model.learning_rate"),
+            "architecture": config("model.name"),
+            "batch_size": config("model.batch_size"),
+            "hidden_dim": config("model.hidden_dim"),
+            "dataset": config("dataset_id"),
+        },
+    )
+
     # generate data or load from file
     print("Starting training...")
 
@@ -90,6 +101,7 @@ def main():
         dropout=config("model.dropout"),
         num_conv_layers=config("model.num_conv_layers"),
     )
+    wandb.watch(model)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config("model.learning_rate"))
 
@@ -116,6 +128,9 @@ def main():
         # Evaluate model
         val_loss = _evaluate_epoch(va_loader, model, stats, device, train_loss)
         print(f"Val loss for epoch {epoch} is {val_loss}.")
+
+        # Call logger
+        wandb.log({"train_loss": train_loss, "val_loss": val_loss})
 
         # Save model parameters
         save_checkpoint(model, epoch + 1, config("model.checkpoint"), stats)
