@@ -7,7 +7,7 @@
         "name": "GINREGv0.1",
         "checkpoint": "./checkpoints/",
         "learning_rate": 1e-3,
-        "num_epochs": 50,
+        "num_epochs": 200,
         "batch_size": 64,
         "node_feature_size": 4,
         "hidden_dim": 32,
