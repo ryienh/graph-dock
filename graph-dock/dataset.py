@@ -9,9 +9,7 @@ For questions or comments, contact rhosseini@anl.gov
 
 import numpy as np
 import pandas as pd
-import pickle
 import tqdm
-import os
 from sklearn.preprocessing import normalize
 from pysmiles import read_smiles
 from mendeleev import element
@@ -125,7 +123,7 @@ class ChemDataset(InMemoryDataset):
         assert len(X) == len(y)
 
         for graph, label in zip(X, y):
-            graph.y = label
+            graph.y = torch.FloatTensor(label)
 
         return X
 
@@ -149,10 +147,12 @@ class ChemDataset(InMemoryDataset):
             for idx in range(len(list(x.nodes))):
 
                 # represent element by atomic number (using medeleev)
-                x.nodes[idx]["element"] = element(x.nodes[idx]["element"]).atomic_number
+                x.nodes[idx]["element"] = float(
+                    element(x.nodes[idx]["element"]).atomic_number
+                )
 
                 # cast aromatic bool to int
-                x.nodes[idx]["aromatic"] = int(x.nodes[idx]["aromatic"])
+                x.nodes[idx]["aromatic"] = float(int(x.nodes[idx]["aromatic"]))
 
                 # remove stereochemical information - FIXME: discuss sols
                 try:
@@ -172,5 +172,5 @@ class ChemDataset(InMemoryDataset):
 
 # test dataset.py
 if __name__ == "__main__":
-    print("Procesing dataset...")
+    print("Processing dataset...")
     tr_loader, val_loader, test_loader = get_train_val_test_loaders()

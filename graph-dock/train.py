@@ -8,20 +8,14 @@ For questions or comments, contact rhosseini@anl.gov
 """
 
 import torch
-import torch_geometric
-import numpy as np
-import utils
 from dataset import get_train_val_test_loaders
-from dataset import ChemDataset
 from model import GINREG
-import utils
 import tqdm
-import pickle
 
 from utils import config, restore_checkpoint, save_checkpoint
 
 
-def _train_epoch(data_loader, model, criterion, optimizer, device):
+def _train_epoch(data_loader, model, optimizer, device):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -29,35 +23,33 @@ def _train_epoch(data_loader, model, criterion, optimizer, device):
 
     model = model.train()
 
-    running_loss = []
+    running_loss = 0
 
-    for X, y in tqdm.tqdm(data_loader):
+    for X in tqdm.tqdm(data_loader):
         # handle cuda
         X = X.to(device)
-        y = y.to(device)
 
         # clear parameter gradients
         optimizer.zero_grad()
 
         # forward + backward + optimize
         prediction = model(X)
-        loss = criterion(prediction, y)
+        loss = model.loss(prediction, X.y)
         loss.backward()
         optimizer.step()
 
-        # calculate loss and accuracy
-        running_loss.append(criterion(prediction, y).item())
+        # calculate loss
+        running_loss = loss.item() * X.num_graphs
 
-    train_loss = np.mean(running_loss)
+    running_loss /= len(data_loader.dataset)
 
-    return train_loss
+    return running_loss
     #
 
 
 def _evaluate_epoch(
     val_loader,
     model,
-    criterion,
     stats,
     device,
     train_loss,
@@ -67,29 +59,29 @@ def _evaluate_epoch(
 
     model.eval()
 
+    running_loss = 0
     with torch.no_grad():
 
-        running_loss = []
-        for X, y in tqdm.tqdm(val_loader):
+        for X in tqdm.tqdm(val_loader):
             X = X.to(device)
-            y = y.to(device)
 
             prediction = model(X)
+            loss = model.loss(prediction, X.y)
 
             # loss calculation
-            running_loss.append(criterion(prediction, y).item())
+            running_loss = loss.item() * X.num_graphs
 
-        val_loss = np.mean(running_loss)
+        running_loss /= len(val_loader.dataset)
 
-    stats.append([val_loss, train_loss])
-    return val_loss
+    stats.append([running_loss, train_loss])
+    return running_loss
 
 
 def main():
     # generate data or load from file
     print("Starting training...")
 
-    tr_loader, va_loader, te_loader = get_train_val_test_loaders()
+    tr_loader, va_loader, _ = get_train_val_test_loaders()
 
     # define model, loss function, and optimizer
     model = GINREG(
@@ -99,7 +91,6 @@ def main():
         num_conv_layers=config("model.num_conv_layers"),
     )
 
-    criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=config("model.learning_rate"))
 
     # cuda
@@ -113,19 +104,17 @@ def main():
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, criterion, stats, device, 0
+        va_loader, model, stats, device, 0
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
     for epoch in range(start_epoch, config("model.num_epochs")):
         # Train model
-        train_loss = _train_epoch(tr_loader, model, criterion, optimizer, device)
+        train_loss = _train_epoch(tr_loader, model, optimizer, device)
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
-        val_loss = _evaluate_epoch(
-            va_loader, model, criterion, stats, device, train_loss
-        )
+        val_loss = _evaluate_epoch(va_loader, model, stats, device, train_loss)
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
         # Save model parameters
