@@ -35,6 +35,7 @@ def _train_epoch(data_loader, model, optimizer, device):
 
         # forward + backward + optimize
         prediction = model(X)
+        prediction = torch.squeeze(prediction)
         loss = model.loss(prediction, X.y)
         loss.backward()
         optimizer.step()
@@ -65,6 +66,7 @@ def _evaluate_epoch(
             X = X.to(device)
 
             prediction = model(X)
+            prediction = torch.squeeze(prediction)
             loss = model.loss(prediction, X.y)
 
             # loss calculation
@@ -112,9 +114,15 @@ def main():
     model.to(device)
     print("Using device: ", device)
 
-    # Attempts to restore the latest checkpoint if exists
-    print("Loading checkpoint...")
-    model, start_epoch, stats = restore_checkpoint(model, config("model.checkpoint"))
+    # Attempts to restore the latest checkpoint if exists (only if running single experiment)
+    if config("sweep") == 0:
+        print("Loading checkpoint...")
+        model, start_epoch, stats = restore_checkpoint(
+            model, config("model.checkpoint")
+        )
+    else:
+        start_epoch = 0
+        stats = []
 
     # Evaluate model
     _evaluate_epoch(
