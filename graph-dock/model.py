@@ -21,10 +21,11 @@ class GINREG(torch.nn.Module):
         self.convs = torch.nn.ModuleList()
         self.convs.append(self.build_conv_model(input_dim, hidden_dim))
         self.lns = torch.nn.ModuleList()
-        self.lns.append(torch.nn.LayerNorm(hidden_dim))
-        self.lns.append(torch.nn.LayerNorm(hidden_dim))
-        for _ in range(2):
+        for _ in range(self.num_layers):
             self.convs.append(self.build_conv_model(hidden_dim, hidden_dim))
+            self.lns.append(
+                torch.nn.LayerNorm(hidden_dim)
+            )  # one less lns than conv bc no lns after final conv
 
         self.conv_dropout = torch.nn.Dropout(p=self.dropout)
         self.ReLU = torch.nn.ReLU()
@@ -32,7 +33,7 @@ class GINREG(torch.nn.Module):
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
             torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.Dropout(self.dropout),
+            torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim, 1),
         )
 
