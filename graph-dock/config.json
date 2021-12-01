@@ -3,11 +3,12 @@
     "clean_data_path": "./data/d4_dock_data_50k.csv",
     "dataset_id": "d4_5k_v0.1",
     "data_dir": "./data",
+    "sweep": 1,
     "model": {
         "name": "GINREGv0.1",
         "checkpoint": "./checkpoints/",
         "learning_rate": 1e-3,
-        "num_epochs": 200,
+        "num_epochs": 250,
         "batch_size": 64,
         "node_feature_size": 4,
         "hidden_dim": 32,
