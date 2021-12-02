@@ -10,7 +10,6 @@ For questions or comments, contact rhosseini@anl.gov
 import numpy as np
 import pandas as pd
 import tqdm
-from sklearn.preprocessing import normalize
 from pysmiles import read_smiles
 from mendeleev import element
 
@@ -109,19 +108,20 @@ class ChemDataset(InMemoryDataset):
         X = X.to_numpy()
         y = y.to_numpy()
 
-        # convert data to graphs
-        X = self._smiles_2_graph(X)
-
         # drop NaN (prev fill NaN values with minimum)
+        X = X[~np.isnan(y)]
         y = y[~np.isnan(y)]
 
         # normalize labels
         y = (y - np.mean(y)) / np.sqrt(np.var(y))
 
+        # convert data to graphs
+        X = self._smiles_2_graph(X)
+
         assert len(X) == len(y)
 
         for graph, label in zip(X, y):
-            graph.y = torch.FloatTensor(label)
+            graph.y = torch.from_numpy(np.asarray(label))
 
         return X
 
