@@ -93,6 +93,8 @@ def main():
         },
     )
 
+    wandb.config.update({"dataset": config("dataset_id")})
+
     # generate data or load from file
     print("Starting training...")
 
@@ -130,6 +132,8 @@ def main():
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
+    best_val_loss = 100
+
     for epoch in range(start_epoch, config("model.num_epochs")):
         # Train model
         train_loss = _train_epoch(tr_loader, model, optimizer, device)
@@ -138,6 +142,12 @@ def main():
         # Evaluate model
         val_loss = _evaluate_epoch(va_loader, model, stats, device, train_loss)
         print(f"Val loss for epoch {epoch} is {val_loss}.")
+
+        # update if best val loss
+        if val_loss <= best_val_loss:
+            best_val_loss = val_loss
+            wandb.run.summary["best_val_loss"] = val_loss
+            wandb.run.summary["best_val_loss_epoch"] = epoch
 
         # Call logger
         wandb.log({"train_loss": train_loss, "val_loss": val_loss})
