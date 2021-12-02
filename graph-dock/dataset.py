@@ -112,13 +112,11 @@ class ChemDataset(InMemoryDataset):
         # convert data to graphs
         X = self._smiles_2_graph(X)
 
-        # fill NaN values with minimum
-        min_score = min(y)
-        idx = np.where(np.isnan(y))
-        y[idx] = min_score
+        # drop NaN (prev fill NaN values with minimum)
+        y = y[~np.isnan(y)]
 
-        # normalize scores
-        y = normalize(y.reshape(-1, 1), axis=0)
+        # normalize labels
+        y = (y - np.mean(y)) / np.sqrt(np.var(y))
 
         assert len(X) == len(y)
 
@@ -146,10 +144,13 @@ class ChemDataset(InMemoryDataset):
             # cycle through network and preprocess TODO: optimize
             for idx in range(len(list(x.nodes))):
 
-                # represent element by atomic number (using medeleev)
-                x.nodes[idx]["element"] = float(
-                    element(x.nodes[idx]["element"]).atomic_number
-                )
+                # represent element by one hot encoded vector (previously by atomic number)
+                elt = np.zeros(
+                    115
+                )  # 115 possible atomic numbers, can possibly reduce this later
+                atomic_num = element(x.nodes[idx]["element"]).atomic_number
+                elt[atomic_num] = 1
+                x.nodes[idx]["element"] = elt
 
                 # cast aromatic bool to int
                 x.nodes[idx]["aromatic"] = float(int(x.nodes[idx]["aromatic"]))
