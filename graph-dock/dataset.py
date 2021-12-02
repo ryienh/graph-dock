@@ -10,6 +10,7 @@ For questions or comments, contact rhosseini@anl.gov
 import numpy as np
 import pandas as pd
 import tqdm
+import os
 from pysmiles import read_smiles
 from mendeleev import element
 
@@ -32,7 +33,7 @@ def get_train_val_test_loaders(batch_size=config("model.batch_size")):
 
 
 def get_train_val_test_dataset():
-    root = config("data_dir")
+    root = os.path.join(config("data_dir"), config("dataset_id"))
     tr = ChemDataset(root, "train")
     va = ChemDataset(root, "val")
     te = ChemDataset(root, "test")
