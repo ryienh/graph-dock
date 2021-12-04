@@ -22,8 +22,6 @@ def _train_epoch(data_loader, model, optimizer, device):
     Use `optimizer` to optimize the specified `criterion`
     """
 
-    model = model.train()
-
     running_loss = 0
 
     for X in tqdm.tqdm(data_loader):
@@ -82,38 +80,42 @@ def main():
     # init wandb logger
     wandb.init(
         project="graph-dock",
-        config={
-            "learning_rate": config("model.learning_rate"),
-            "architecture": config("model.name"),
-            "batch_size": config("model.batch_size"),
-            "hidden_dim": config("model.hidden_dim"),
-            "num_conv_layers": config("model.num_conv_layers"),
-            "dropout": config("model.dropout"),
-            "dataset": config("dataset_id"),
-        },
+        config=dict(
+            architecture=config("model.name"),
+            learning_rate=config("model.learning_rate"),
+            num_epochs=config("model.num_epochs"),
+            batch_size=config("model.batch_size"),
+            node_feature_size=config("model.node_feature_size"),
+            hidden_dim=config("model.hidden_dim"),
+            num_conv_layers=config("model.num_conv_layers"),
+            dropout=config("model.dropout"),
+            dataset=config("dataset_id"),
+        ),
     )
 
-    wandb.config.update({"dataset": config("dataset_id")})
+    hyperparams = wandb.config
 
     # generate data or load from file
     print("Starting training...")
 
-    tr_loader, va_loader, _ = get_train_val_test_loaders()
+    tr_loader, va_loader, _ = get_train_val_test_loaders(
+        batch_size=hyperparams["batch_size"]
+    )
 
     # define model, loss function, and optimizer
     model = GINREG(
-        input_dim=config("model.node_feature_size"),
-        hidden_dim=config("model.hidden_dim"),
-        dropout=config("model.dropout"),
-        num_conv_layers=config("model.num_conv_layers"),
+        input_dim=hyperparams["node_feature_size"],
+        hidden_dim=hyperparams["hidden_dim"],
+        dropout=hyperparams["dropout"],
+        num_conv_layers=hyperparams["num_conv_layers"],
     )
     wandb.watch(model, log_freq=100)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=config("model.learning_rate"))
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
 
     # cuda
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
+    model = model.to(device)
     print("Using device: ", device)
 
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
@@ -134,7 +136,7 @@ def main():
     # Loop over the entire dataset multiple times
     best_val_loss = 100
 
-    for epoch in range(start_epoch, config("model.num_epochs")):
+    for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
         train_loss = _train_epoch(tr_loader, model, optimizer, device)
         print(f"Train loss for epoch {epoch} is {train_loss}.")
