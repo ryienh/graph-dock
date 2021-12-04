@@ -148,11 +148,9 @@ class ChemDataset(InMemoryDataset):
             for idx in range(len(list(x.nodes))):
 
                 # represent element by one hot encoded vector (previously by atomic number)
-                elt = np.zeros(
-                    115
-                )  # 115 possible atomic numbers, can possibly reduce this later
+                elt = np.zeros(10)  # 9 elts found in d4_50k_v0.2 train set, 1 for other
                 atomic_num = element(x.nodes[idx]["element"]).atomic_number
-                elt[atomic_num] = 1
+                elt[self._get_element_one_hot_index(atomic_num)] = 1
                 x.nodes[idx]["element"] = elt
 
                 # cast aromatic bool to int
@@ -172,6 +170,32 @@ class ChemDataset(InMemoryDataset):
             X.append(x)
 
         return X
+
+    def _get_element_one_hot_index(self, atomic_number):
+        # from of d4_50k_v0.2 train set, we have:
+        #         Element Name  Atomic Number     Count
+        # 0       Carbon              6  643122.0
+        # 1     Nitrogen              7  112452.0
+        # 2       Oxygen              8   98763.0
+        # 3     Fluorine              9   15220.0
+        # 4      Silicon             14       2.0
+        # 5       Sulfur             16   12402.0
+        # 6     Chlorine             17    3657.0
+        # 7      Bromine             35    1043.0
+        # 8       Iodine             53      64.0
+
+        # map a known elt to corresponding index, else bin into 9
+        if atomic_number in [6, 7, 8, 9]:
+            return atomic_number - 6
+        if atomic_number == 14:
+            return 4
+        if atomic_number in [16, 17]:
+            return atomic_number - 11
+        if atomic_number == 35:
+            return 7
+        if atomic_number == 53:
+            return 8
+        return 9  # else
 
 
 # test dataset.py
