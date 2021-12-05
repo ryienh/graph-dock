@@ -13,7 +13,7 @@ from model import GINREG
 import tqdm
 import wandb
 
-from utils import config, restore_checkpoint, save_checkpoint
+from utils import get_config, restore_checkpoint, save_checkpoint
 
 
 def _train_epoch(data_loader, model, optimizer, device):
@@ -21,7 +21,7 @@ def _train_epoch(data_loader, model, optimizer, device):
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
     """
-
+    model = model.train()
     running_loss = 0
 
     for X in tqdm.tqdm(data_loader):
@@ -55,7 +55,7 @@ def _evaluate_epoch(
     train_loss,
 ):
 
-    model.eval()
+    model = model.eval()
 
     running_loss = 0
     with torch.no_grad():
@@ -81,15 +81,15 @@ def main():
     wandb.init(
         project="graph-dock",
         config=dict(
-            architecture=config("model.name"),
-            learning_rate=config("model.learning_rate"),
-            num_epochs=config("model.num_epochs"),
-            batch_size=config("model.batch_size"),
-            node_feature_size=config("model.node_feature_size"),
-            hidden_dim=config("model.hidden_dim"),
-            num_conv_layers=config("model.num_conv_layers"),
-            dropout=config("model.dropout"),
-            dataset=config("dataset_id"),
+            architecture=get_config("model.name"),
+            learning_rate=get_config("model.learning_rate"),
+            num_epochs=get_config("model.num_epochs"),
+            batch_size=get_config("model.batch_size"),
+            node_feature_size=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+            dropout=get_config("model.dropout"),
+            dataset=get_config("dataset_id"),
         ),
     )
 
@@ -119,10 +119,10 @@ def main():
     print("Using device: ", device)
 
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
-    if config("sweep") == 0:
+    if get_config("sweep") == 0:
         print("Loading checkpoint...")
         model, start_epoch, stats = restore_checkpoint(
-            model, config("model.checkpoint")
+            model, get_config("model.checkpoint")
         )
     else:
         start_epoch = 0
@@ -155,7 +155,7 @@ def main():
         wandb.log({"train_loss": train_loss, "val_loss": val_loss})
 
         # Save model parameters
-        save_checkpoint(model, epoch + 1, config("model.checkpoint"), stats)
+        save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
 
     print("Finished Training")
 
