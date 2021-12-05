@@ -19,11 +19,11 @@ from torch_geometric.utils import from_networkx
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.loader import DataLoader
 
-from utils import config, suppress_stdout_stderr
+from utils import get_config, suppress_stdout_stderr
 
 
 def get_train_val_test_loaders(
-    batch_size=config("model.batch_size"),
+    batch_size=get_config("model.batch_size"),
 ):  # defaault must be overriden during hyperparam sweeps; consider removing
     tr, va, te = get_train_val_test_dataset()
 
@@ -35,7 +35,7 @@ def get_train_val_test_loaders(
 
 
 def get_train_val_test_dataset():
-    root = os.path.join(config("data_dir"), config("dataset_id"))
+    root = os.path.join(get_config("data_dir"), get_config("dataset_id"))
     tr = ChemDataset(root, "train")
     va = ChemDataset(root, "val")
     te = ChemDataset(root, "test")
@@ -82,7 +82,7 @@ class ChemDataset(InMemoryDataset):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         np.random.seed(0)
-        self.data = pd.read_csv(config("clean_data_path"))
+        self.data = pd.read_csv(get_config("clean_data_path"))
 
         data_list = self._load_data_mem()
 
