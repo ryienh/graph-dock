@@ -109,6 +109,7 @@ def main():
         dropout=hyperparams["dropout"],
         num_conv_layers=hyperparams["num_conv_layers"],
     )
+    model = model.double()
     wandb.watch(model, log_freq=100)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
