@@ -8,7 +8,7 @@ import torch
 import itertools
 
 
-def config(attr, fname=os.path.join("./", "graph-dock", "config.json")):
+def get_config(attr, fname=os.path.join("./", "graph-dock", "config.json")):
     """
     Retrieves the queried attribute value from the config file. Loads the
     config file on first call.
@@ -24,10 +24,10 @@ def config(attr, fname=os.path.join("./", "graph-dock", "config.json")):
     -------
     Requested attribute
     """
-    if not hasattr(config, "config"):
+    if not hasattr(get_config, "config"):
         with open(fname) as f:
-            config.config = eval(f.read())
-    node = config.config
+            get_config.config = eval(f.read())
+    node = get_config.config
     for part in attr.split("."):
         node = node[part]
     return node
