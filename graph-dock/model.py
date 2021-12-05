@@ -32,9 +32,9 @@ class GINREG(torch.nn.Module):
 
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, hidden_dim / 2),
+            torch.nn.Linear(hidden_dim, int(hidden_dim / 2)),
             torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim / 2, 1),
+            torch.nn.Linear(int(hidden_dim / 2), 1),
         )
 
     def build_conv_model(self, input_dim, hidden_dim):
