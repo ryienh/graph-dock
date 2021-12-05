@@ -10,7 +10,7 @@
         "learning_rate": 1e-3,
         "num_epochs": 250,
         "batch_size": 64,
-        "node_feature_size": 4,
+        "node_feature_size": 13,
         "hidden_dim": 32,
         "num_conv_layers": 3,
         "dropout": 0.1
