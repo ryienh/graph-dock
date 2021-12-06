@@ -39,7 +39,7 @@ def _train_epoch(data_loader, model, optimizer, device):
         optimizer.step()
 
         # calculate loss
-        running_loss = loss.item() * X.num_graphs
+        running_loss += loss.item() * X.num_graphs
 
     running_loss /= len(data_loader.dataset)
 
@@ -68,7 +68,7 @@ def _evaluate_epoch(
             loss = model.loss(prediction, X.y)
 
             # loss calculation
-            running_loss = loss.item() * X.num_graphs
+            running_loss += loss.item() * X.num_graphs
 
         running_loss /= len(val_loader.dataset)
 
@@ -110,7 +110,7 @@ def main():
         num_conv_layers=hyperparams["num_conv_layers"],
     )
     model = model.double()
-    wandb.watch(model, log_freq=100)
+    wandb.watch(model, log_freq=1000)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
 
