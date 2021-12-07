@@ -82,7 +82,16 @@ class ChemDataset(InMemoryDataset):
         np.random.seed(0)
         self.data = pd.read_csv(get_config("clean_data_path"))
 
-        data_list = self._load_data_mem()
+        # check for dataset version
+        ds_version = get_config("dataset_id")
+        if ds_version.endswith("v0.2"):
+            data_list = self._load_data_v_0_2()
+        elif ds_version.endswith("v0.2"):
+            data_list = self._load_data_v_0_3()
+        else:
+            raise ValueError(
+                f"Dataset version {ds_version} is not supported. Please update config file and try again."
+            )
 
         data, slices = self.collate(data_list)
 
@@ -93,9 +102,12 @@ class ChemDataset(InMemoryDataset):
         elif self.partition == "test":
             torch.save((data, slices), self.processed_paths[2])
 
-    def _load_data_mem(self):
+    def _load_data_v_0_2(self):
         """
-        Loads a single data partition from file to memory
+        Loads a single data partition from file to memory.
+        Scales labels to zero mean and unit s.d.
+        Stores element type in one-hot encoding with length 10.
+        Datapoints with NaN labels are dropped.
         """
 
         # TODO: port to pygeo system of transform, pre_transform, pre_filter
@@ -125,6 +137,16 @@ class ChemDataset(InMemoryDataset):
             graph.y = torch.from_numpy(np.asarray(label))
 
         return X
+
+    def _load_data_v_0_3(self):
+        """
+        Loads a single data partition from file to memory.
+        Scales labels to zero mean and unit s.d., then clips positive results to 0, adds NaNs as 0.
+        Stores element type in one-hot encoding with length 10.
+        """
+        # TODO: implement function
+
+        raise NotImplementedError("Dataset v0.3 is not yet available.")
 
     def _smiles_2_graph(self, smiles_list):
         """
@@ -199,4 +221,6 @@ class ChemDataset(InMemoryDataset):
 # test dataset.py
 if __name__ == "__main__":
     print("Processing dataset...")
-    tr_loader, val_loader, test_loader = get_train_val_test_loaders()
+    tr_loader, val_loader, test_loader = get_train_val_test_loaders(
+        batch_size=get_config("model.batch_size")
+    )
