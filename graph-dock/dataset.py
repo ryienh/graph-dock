@@ -22,9 +22,7 @@ from torch_geometric.loader import DataLoader
 from utils import get_config, suppress_stdout_stderr
 
 
-def get_train_val_test_loaders(
-    batch_size=get_config("model.batch_size"),
-):  # defaault must be overriden during hyperparam sweeps; consider removing
+def get_train_val_test_loaders(batch_size):
     tr, va, te = get_train_val_test_dataset()
 
     tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True)
