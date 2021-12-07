@@ -1,0 +1,18 @@
+{
+    "raw_data_path": "./data/d4_table_name_smi_energy_hac_lte_25_title.csv",
+    "clean_data_path": "./data/d4_dock_data_50k.csv",
+    "dataset_id": "d4_50k_v0.2",
+    "data_dir": "./data",
+    "sweep": 1,
+    "model": {
+        "name": "GINREGv0.1",
+        "checkpoint": "./checkpoints/",
+        "learning_rate": 1e-3,
+        "num_epochs": 250,
+        "batch_size": 64,
+        "node_feature_size": 13,
+        "hidden_dim": 32,
+        "num_conv_layers": 3,
+        "dropout": 0.1
+    }
+}
