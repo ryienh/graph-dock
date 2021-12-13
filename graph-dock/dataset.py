@@ -88,6 +88,8 @@ class ChemDataset(InMemoryDataset):
             data_list = self._load_data_v_0_2()
         elif ds_version.endswith("v0.3"):
             data_list = self._load_data_v_0_3()
+        elif ds_version.endswith("v0.4"):
+            data_list = self._load_data_v_0_4()
         else:
             raise ValueError(
                 f"Dataset version {ds_version} is not supported. Please update config file and try again."
@@ -144,7 +146,6 @@ class ChemDataset(InMemoryDataset):
         Scales labels to zero mean and unit s.d., then clips positive results to 0, adds NaNs as 0.
         Stores element type in one-hot encoding with length 10.
         """
-        # TODO: implement function
 
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
@@ -167,6 +168,48 @@ class ChemDataset(InMemoryDataset):
 
         # add NaNs as 0
         y[np.isnan(y)] = max_scaled_label
+
+        # convert data to graphs
+        X = self._smiles_2_graph(X)
+
+        assert len(X) == len(y)
+
+        for graph, label in zip(X, y):
+            graph.y = torch.from_numpy(np.asarray(label))
+
+        return X
+
+    def _load_data_v_0_4(self):
+        """
+        Loads a single data partition from file to memory.
+        Scales labels to zero mean and unit s.d., then clips positive results to 0, adds NaNs as 0. Flips labels.
+        Stores element type in one-hot encoding with length 10.
+        """
+
+        # select appropriate partition
+        df = self.data[self.data.partition == self.partition]
+
+        # store dictionary of chem names -> graphs #TODO: implement this for inference
+        X = df["smiles"]
+        y = df["dockscore"]
+        X = X.to_numpy()
+        y = y.to_numpy()
+        y_raw = y.copy()
+
+        # scale labels
+        y[~np.isnan(y)] = (y[~np.isnan(y)] - np.mean(y[~np.isnan(y)])) / np.sqrt(
+            np.var(y[~np.isnan(y)])
+        )
+
+        # flip labels
+        y = -1 * y
+
+        # clip labels to (max) TODO: check this with Austin
+        min_scaled_label = np.min(y[y_raw <= 0])
+        y[y_raw > 0] = min_scaled_label
+
+        # add NaNs as 0
+        y[np.isnan(y)] = min_scaled_label
 
         # convert data to graphs
         X = self._smiles_2_graph(X)
