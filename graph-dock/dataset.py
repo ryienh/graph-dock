@@ -25,9 +25,9 @@ from utils import get_config, suppress_stdout_stderr
 def get_train_val_test_loaders(batch_size):
     tr, va, te = get_train_val_test_dataset()
 
-    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True)
-    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False)
-    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False)
+    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, pin_memory=True)
+    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, pin_memory=True)
+    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, pin_memory=True)
 
     return tr_loader, va_loader, te_loader
 
@@ -86,7 +86,7 @@ class ChemDataset(InMemoryDataset):
         ds_version = get_config("dataset_id")
         if ds_version.endswith("v0.2"):
             data_list = self._load_data_v_0_2()
-        elif ds_version.endswith("v0.2"):
+        elif ds_version.endswith("v0.3"):
             data_list = self._load_data_v_0_3()
         else:
             raise ValueError(
@@ -125,7 +125,7 @@ class ChemDataset(InMemoryDataset):
         X = X[~np.isnan(y)]
         y = y[~np.isnan(y)]
 
-        # normalize labels
+        # scale labels
         y = (y - np.mean(y)) / np.sqrt(np.var(y))
 
         # convert data to graphs
@@ -146,7 +146,37 @@ class ChemDataset(InMemoryDataset):
         """
         # TODO: implement function
 
-        raise NotImplementedError("Dataset v0.3 is not yet available.")
+        # select appropriate partition
+        df = self.data[self.data.partition == self.partition]
+
+        # store dictionary of chem names -> graphs #TODO: implement this for inference
+        X = df["smiles"]
+        y = df["dockscore"]
+        X = X.to_numpy()
+        y = y.to_numpy()
+        y_raw = y.copy()
+
+        # scale labels
+        y[~np.isnan(y)] = (y[~np.isnan(y)] - np.mean(y[~np.isnan(y)])) / np.sqrt(
+            np.var(y[~np.isnan(y)])
+        )
+
+        # clip labels to (max) TODO: check this with Austin
+        max_scaled_label = np.max(y[y_raw <= 0])
+        y[y_raw > 0] = max_scaled_label
+
+        # add NaNs as 0
+        y[np.isnan(y)] = max_scaled_label
+
+        # convert data to graphs
+        X = self._smiles_2_graph(X)
+
+        assert len(X) == len(y)
+
+        for graph, label in zip(X, y):
+            graph.y = torch.from_numpy(np.asarray(label))
+
+        return X
 
     def _smiles_2_graph(self, smiles_list):
         """
