@@ -12,6 +12,7 @@ from dataset import get_train_val_test_loaders
 from model import GINREG
 import tqdm
 import wandb
+from scipy.stats import pearsonr
 
 from utils import get_config, restore_checkpoint, save_checkpoint
 
@@ -60,6 +61,9 @@ def _evaluate_epoch(
     running_loss = 0
     with torch.no_grad():
 
+        predictions = []
+        labels = []
+
         for X in tqdm.tqdm(val_loader):
             X = X.to(device)
 
@@ -70,10 +74,13 @@ def _evaluate_epoch(
             # loss calculation
             running_loss += loss.item() * X.num_graphs
 
+            predictions.append(prediction)
+            labels.append(X.y)
+
         running_loss /= len(val_loader.dataset)
 
     stats.append([running_loss, train_loss])
-    return running_loss
+    return running_loss, pearsonr(predictions, labels)
 
 
 def main():
@@ -143,7 +150,9 @@ def main():
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
-        val_loss = _evaluate_epoch(va_loader, model, stats, device, train_loss)
+        val_loss, pearson_coef = _evaluate_epoch(
+            va_loader, model, stats, device, train_loss
+        )
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
         # update if best val loss
@@ -151,6 +160,7 @@ def main():
             best_val_loss = val_loss
             wandb.run.summary["best_val_loss"] = val_loss
             wandb.run.summary["best_val_loss_epoch"] = epoch
+            wandb.run.summary["best_pearson_coef"] = pearson_coef
 
         # Call logger
         wandb.log({"train_loss": train_loss, "val_loss": val_loss})
