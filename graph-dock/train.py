@@ -74,8 +74,8 @@ def _evaluate_epoch(
             # loss calculation
             running_loss += loss.item() * X.num_graphs
 
-            predictions.append(prediction)
-            labels.append(X.y)
+            predictions += prediction.tolist()
+            labels += X.y.tolist()
 
         running_loss /= len(val_loader.dataset)
 

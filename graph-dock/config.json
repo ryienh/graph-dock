@@ -9,10 +9,10 @@
         "checkpoint": "./checkpoints/",
         "learning_rate": 1e-3,
         "num_epochs": 250,
-        "batch_size": 64,
+        "batch_size": 128,
         "node_feature_size": 13,
-        "hidden_dim": 32,
-        "num_conv_layers": 3,
+        "hidden_dim": 128,
+        "num_conv_layers": 5,
         "dropout": 0.1
     }
 }
