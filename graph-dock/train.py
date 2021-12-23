@@ -12,7 +12,8 @@ from dataset import get_train_val_test_loaders
 from model import GINREG
 import tqdm
 import wandb
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr, kendalltau
+from sklearn.metrics import r2_score, mean_absolute_error
 
 from utils import get_config, restore_checkpoint, save_checkpoint
 
@@ -80,7 +81,14 @@ def _evaluate_epoch(
         running_loss /= len(val_loader.dataset)
 
     stats.append([running_loss, train_loss])
-    return running_loss, pearsonr(predictions, labels)
+    return (
+        running_loss,
+        pearsonr(labels, predictions)[0],
+        r2_score(labels, predictions),
+        spearmanr(labels, predictions),
+        kendalltau(labels, predictions)[0],
+        mean_absolute_error(labels, predictions),
+    )
 
 
 def main():
@@ -150,7 +158,7 @@ def main():
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
-        val_loss, pearson_coef = _evaluate_epoch(
+        val_loss, pearson_coef, r2, spearman, kendall, mae = _evaluate_epoch(
             va_loader, model, stats, device, train_loss
         )
         print(f"Val loss for epoch {epoch} is {val_loss}.")
@@ -161,9 +169,13 @@ def main():
             wandb.run.summary["best_val_loss"] = val_loss
             wandb.run.summary["best_val_loss_epoch"] = epoch
             wandb.run.summary["best_pearson_coef"] = pearson_coef
+            wandb.run.summary["best_r2_score"] = r2
+            wandb.run.summary["best_spearman_coef"] = spearman
+            wandb.run.summary["best_kendal_coef"] = kendall
+            wandb.run.summary["best_MAE"] = mae
 
         # Call logger
-        wandb.log({"train_loss": train_loss, "val_loss": val_loss})
+        wandb.log({"train_loss": train_loss, "val_loss": val_loss, "r2_score": r2})
 
         # Save model parameters
         save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
