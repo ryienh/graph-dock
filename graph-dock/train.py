@@ -18,7 +18,7 @@ from sklearn.metrics import r2_score, mean_absolute_error
 from utils import get_config, restore_checkpoint, save_checkpoint
 
 
-def _train_epoch(data_loader, model, optimizer, device):
+def _train_epoch(data_loader, model, optimizer):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -27,8 +27,6 @@ def _train_epoch(data_loader, model, optimizer, device):
     running_loss = 0
 
     for X in tqdm.tqdm(data_loader):
-        # handle cuda
-        X = X.to(device)
 
         # clear parameter gradients
         optimizer.zero_grad()
@@ -53,7 +51,6 @@ def _evaluate_epoch(
     val_loader,
     model,
     stats,
-    device,
     train_loss,
 ):
 
@@ -66,7 +63,6 @@ def _evaluate_epoch(
         labels = []
 
         for X in tqdm.tqdm(val_loader):
-            X = X.to(device)
 
             prediction = model(X)
             prediction = torch.squeeze(prediction)
@@ -85,7 +81,7 @@ def _evaluate_epoch(
         running_loss,
         pearsonr(labels, predictions)[0],
         r2_score(labels, predictions),
-        spearmanr(labels, predictions),
+        spearmanr(labels, predictions)[0],
         kendalltau(labels, predictions)[0],
         mean_absolute_error(labels, predictions),
     )
@@ -134,6 +130,10 @@ def main():
     model = model.to(device)
     print("Using device: ", device)
 
+    # put entire loader onto device
+    tr_loader.dataset.data.to(device)
+    va_loader.dataset.data.to(device)
+
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
     if get_config("sweep") == 0:
         print("Loading checkpoint...")
@@ -168,14 +168,19 @@ def main():
             best_val_loss = val_loss
             wandb.run.summary["best_val_loss"] = val_loss
             wandb.run.summary["best_val_loss_epoch"] = epoch
-            wandb.run.summary["best_pearson_coef"] = pearson_coef
-            wandb.run.summary["best_r2_score"] = r2
-            wandb.run.summary["best_spearman_coef"] = spearman
-            wandb.run.summary["best_kendal_coef"] = kendall
-            wandb.run.summary["best_MAE"] = mae
 
         # Call logger
-        wandb.log({"train_loss": train_loss, "val_loss": val_loss, "r2_score": r2})
+        wandb.log(
+            {
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "r2_score": r2,
+                "spearman": spearman,
+                "kendall": kendall,
+                "pearson": pearson_coef,
+                "MAE": mae,
+            }
+        )
 
         # Save model parameters
         save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
