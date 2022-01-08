@@ -6,6 +6,7 @@ For questions or comments, contact rhosseini@anl.gov
 import os
 import torch
 import itertools
+from torch_geometric.utils import degree
 
 
 def get_config(attr, fname=os.path.join("./", "graph-dock", "config.json")):
@@ -162,3 +163,11 @@ def clear_checkpoint(checkpoint_dir):
         os.remove(os.path.join(checkpoint_dir, f))
 
     print("Checkpoint successfully removed")
+
+
+def get_degree_hist(train_dataset):
+    deg = torch.zeros(5, dtype=torch.long)
+    for data in train_dataset:
+        d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
+        deg += torch.bincount(d, minlength=deg.numel())
+    return deg
