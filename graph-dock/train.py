@@ -9,16 +9,16 @@ For questions or comments, contact rhosseini@anl.gov
 
 import torch
 from dataset import get_train_val_test_loaders
-from model import GINREG
+from model import GINREG, PNAREG
 import tqdm
 import wandb
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import r2_score, mean_absolute_error
 
-from utils import get_config, restore_checkpoint, save_checkpoint
+from utils import get_config, restore_checkpoint, save_checkpoint, get_degree_hist
 
 
-def _train_epoch(data_loader, model, optimizer):
+def _train_epoch(data_loader, model, optimizer, device):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -27,6 +27,7 @@ def _train_epoch(data_loader, model, optimizer):
     running_loss = 0
 
     for X in tqdm.tqdm(data_loader):
+        X = X.to(device)  # FIXME: fix dataloading issue
 
         # clear parameter gradients
         optimizer.zero_grad()
@@ -47,12 +48,7 @@ def _train_epoch(data_loader, model, optimizer):
     #
 
 
-def _evaluate_epoch(
-    val_loader,
-    model,
-    stats,
-    train_loss,
-):
+def _evaluate_epoch(val_loader, model, stats, train_loss, device):
 
     model = model.eval()
 
@@ -63,6 +59,8 @@ def _evaluate_epoch(
         labels = []
 
         for X in tqdm.tqdm(val_loader):
+
+            X = X.to(device)
 
             prediction = model(X)
             prediction = torch.squeeze(prediction)
@@ -113,26 +111,43 @@ def main():
         batch_size=hyperparams["batch_size"]
     )
 
-    # define model, loss function, and optimizer
-    model = GINREG(
-        input_dim=hyperparams["node_feature_size"],
-        hidden_dim=hyperparams["hidden_dim"],
-        dropout=hyperparams["dropout"],
-        num_conv_layers=hyperparams["num_conv_layers"],
-    )
-    model = model.double()
-    wandb.watch(model, log_freq=1000)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
-
     # cuda
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
     print("Using device: ", device)
 
+    # define model, loss function, and optimizer
+    model_name = hyperparams["architecture"]
+    if model_name == "GINREGv0.1":
+        model = GINREG(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "PNAREGv0.1":
+        deg = get_degree_hist(tr_loader.dataset)
+        deg.to(device)
+        model = PNAREG(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            deg=deg,
+        )
+    else:
+        raise NotImplementedError(f"{model_name} not yet implemented.")
+
+    model = model.double()
+    model = model.to(device)
+    wandb.watch(model, log_freq=1000)
+
     # put entire loader onto device
-    tr_loader.dataset.data.to(device)
-    va_loader.dataset.data.to(device)
+    # tr_loader.dataset.data.to(device)
+    # va_loader.dataset.data.to(device)
+
+    # define optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
 
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
     if get_config("sweep") == 0:
@@ -146,7 +161,7 @@ def main():
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, stats, device, 0
+        va_loader, model, stats, 0, device
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
@@ -159,7 +174,7 @@ def main():
 
         # Evaluate model
         val_loss, pearson_coef, r2, spearman, kendall, mae = _evaluate_epoch(
-            va_loader, model, stats, device, train_loss
+            va_loader, model, stats, train_loss, device
         )
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 

@@ -5,14 +5,14 @@
     "data_dir": "./data",
     "sweep": 1,
     "model": {
-        "name": "GINREGv0.1",
+        "name": "PNAREGv0.1",
         "checkpoint": "./checkpoints/",
         "learning_rate": 1e-3,
         "num_epochs": 250,
         "batch_size": 128,
         "node_feature_size": 13,
-        "hidden_dim": 128,
-        "num_conv_layers": 5,
-        "dropout": 0.1
+        "hidden_dim": 64,
+        "num_conv_layers": 3,
+        "dropout": 0.0
     }
 }
