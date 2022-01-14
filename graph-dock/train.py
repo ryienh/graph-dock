@@ -1,5 +1,5 @@
 """
-Train GCN
+Train multiple models
     Trains a graph neural network to predict docking score based on subset of docking data
     Periodically outputs training information, and saves model checkpoints
     Usage: python3 train.py
@@ -7,15 +7,30 @@ Train GCN
 For questions or comments, contact rhosseini@anl.gov
 """
 
+from enum import Enum
 import torch
 from dataset import get_train_val_test_loaders
-from model import GINREG, PNAREG
+from model import GINREG, PNAREG, PNACLF
 import tqdm
 import wandb
 from scipy.stats import pearsonr, spearmanr, kendalltau
-from sklearn.metrics import r2_score, mean_absolute_error
+from sklearn.metrics import (
+    r2_score,
+    mean_absolute_error,
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    recall_score,
+    precision_score,
+)
 
 from utils import get_config, restore_checkpoint, save_checkpoint, get_degree_hist
+
+
+class Task(Enum):
+    Clf = 1
+    Reg = 2
+    Ukn = 3
 
 
 def _train_epoch(data_loader, model, optimizer, device):
@@ -27,6 +42,7 @@ def _train_epoch(data_loader, model, optimizer, device):
     running_loss = 0
 
     for X in tqdm.tqdm(data_loader):
+
         X = X.to(device)  # FIXME: fix dataloading issue
 
         # clear parameter gradients
@@ -48,23 +64,28 @@ def _train_epoch(data_loader, model, optimizer, device):
     #
 
 
-def _evaluate_epoch(val_loader, model, stats, train_loss, device):
+def _evaluate_epoch(val_loader, model, stats, train_loss, device, task):
 
     model = model.eval()
 
     running_loss = 0
+    predictions = []
+    labels = []
     with torch.no_grad():
-
-        predictions = []
-        labels = []
 
         for X in tqdm.tqdm(val_loader):
 
             X = X.to(device)
 
-            prediction = model(X)
-            prediction = torch.squeeze(prediction)
-            loss = model.loss(prediction, X.y)
+            logits = model(X)
+
+            if task == Task.Reg:
+                prediction = torch.squeeze(logits)
+                loss = model.loss(prediction, X.y)
+            elif task == Task.Clf:
+                prediction = torch.argmax(logits, dim=1)
+                logits = torch.squeeze(logits)
+                loss = model.loss(logits, X.y)
 
             # loss calculation
             running_loss += loss.item() * X.num_graphs
@@ -75,14 +96,27 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device):
         running_loss /= len(val_loader.dataset)
 
     stats.append([running_loss, train_loss])
-    return (
-        running_loss,
-        pearsonr(labels, predictions)[0],
-        r2_score(labels, predictions),
-        spearmanr(labels, predictions)[0],
-        kendalltau(labels, predictions)[0],
-        mean_absolute_error(labels, predictions),
-    )
+
+    if task == Task.Reg:
+        return (
+            running_loss,
+            pearsonr(labels, predictions)[0],
+            r2_score(labels, predictions),
+            spearmanr(labels, predictions)[0],
+            kendalltau(labels, predictions)[0],
+            mean_absolute_error(labels, predictions),
+        )
+    elif task == Task.Clf:
+        return (
+            running_loss,
+            accuracy_score(labels, predictions),
+            balanced_accuracy_score(labels, predictions),
+            f1_score(labels, predictions),
+            recall_score(labels, predictions),
+            precision_score(labels, predictions),
+        )
+    else:
+        raise ValueError(f"Task must be one of Clf or Reg, not {task}")
 
 
 def main():
@@ -99,6 +133,7 @@ def main():
             num_conv_layers=get_config("model.num_conv_layers"),
             dropout=get_config("model.dropout"),
             dataset=get_config("dataset_id"),
+            threshold=get_config("threshold"),
         ),
     )
 
@@ -115,8 +150,10 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device: ", device)
 
-    # define model, loss function, and optimizer
+    # define model, loss function, task keyword, and optimizer
     model_name = hyperparams["architecture"]
+    task = Task.Ukn
+
     if model_name == "GINREGv0.1":
         model = GINREG(
             input_dim=hyperparams["node_feature_size"],
@@ -124,6 +161,7 @@ def main():
             dropout=hyperparams["dropout"],
             num_conv_layers=hyperparams["num_conv_layers"],
         )
+        task = Task.Reg
 
     elif model_name == "PNAREGv0.1":
         deg = get_degree_hist(tr_loader.dataset)
@@ -135,10 +173,25 @@ def main():
             num_conv_layers=hyperparams["num_conv_layers"],
             deg=deg,
         )
+        task = Task.Reg
+
+    elif model_name == "PNACLFv0.1":
+        deg = get_degree_hist(tr_loader.dataset)
+        deg.to(device)
+        model = PNACLF(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            deg=deg,
+            threshold=hyperparams["threshold"],
+        )
+        task = Task.Clf
+
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
-    model = model.double()
+    model = model.to(torch.float64)
     model = model.to(device)
     wandb.watch(model, log_freq=1000)
 
@@ -161,11 +214,13 @@ def main():
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, stats, 0, device
+        va_loader, model, stats, 0, device, task
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
     best_val_loss = 100
+
+    print(f"Task detected: {task}")
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
@@ -173,9 +228,23 @@ def main():
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
-        val_loss, pearson_coef, r2, spearman, kendall, mae = _evaluate_epoch(
-            va_loader, model, stats, train_loss, device
-        )
+        if task == Task.Reg:
+            val_loss, pearson_coef, r2, spearman, kendall, mae = _evaluate_epoch(
+                va_loader, model, stats, train_loss, device, task
+            )
+        elif task == Task.Clf:
+            (
+                val_loss,
+                acc_score,
+                balanced_acc_score,
+                f1,
+                recall,
+                precision,
+            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task)
+        else:
+            raise ValueError(
+                f'Invalid task, task must be one of "Clf" or "Reg" not {task}'
+            )
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
         # update if best val loss
@@ -185,20 +254,33 @@ def main():
             wandb.run.summary["best_val_loss_epoch"] = epoch
 
         # Call logger
-        wandb.log(
-            {
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "r2_score": r2,
-                "spearman": spearman,
-                "kendall": kendall,
-                "pearson": pearson_coef,
-                "MAE": mae,
-            }
-        )
+        if task == Task.Reg:
+            wandb.log(
+                {
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "r2_score": r2,
+                    "spearman": spearman,
+                    "kendall": kendall,
+                    "pearson": pearson_coef,
+                    "MAE": mae,
+                }
+            )
+        elif task == Task.Clf:
+            wandb.log(
+                {
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "acc_score": acc_score,
+                    "balanced_acc_score": balanced_acc_score,
+                    "f1": f1,
+                    "recall": recall,
+                    "precision": precision,
+                }
+            )
 
-        # Save model parameters
-        save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
+    # Save model parameters
+    save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
 
     print("Finished Training")
 
