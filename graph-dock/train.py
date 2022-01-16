@@ -10,7 +10,7 @@ For questions or comments, contact rhosseini@anl.gov
 from enum import Enum
 import torch
 from dataset import get_train_val_test_loaders
-from model import GINREG, PNAREG, PNACLF
+from model import GINREG, PNAREG, PNACLF, GATREG
 import tqdm
 import wandb
 from scipy.stats import pearsonr, spearmanr, kendalltau
@@ -134,6 +134,7 @@ def main():
             dropout=get_config("model.dropout"),
             dataset=get_config("dataset_id"),
             threshold=get_config("threshold"),
+            num_heads=get_config("model.num_heads"),
         ),
     )
 
@@ -188,12 +189,29 @@ def main():
         )
         task = Task.Clf
 
+    elif model_name == "GATREGv0.1":
+        print(f"Node Feature size: ", hyperparams["node_feature_size"])
+        print(f"Node Feature size: ", hyperparams["node_feature_size"])
+        model = GATREG(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            heads=hyperparams["num_heads"],
+        )
+        task = Task.Reg
+
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
+
+    print(f"Task detected: {task}")
 
     model = model.to(torch.float64)
     model = model.to(device)
     wandb.watch(model, log_freq=1000)
+    params = sum(p.numel() for p in model.parameters())
+    print(f"Num parameters: {params}")
+    wandb.run.summary["num_params"] = params
 
     # put entire loader onto device
     # tr_loader.dataset.data.to(device)
@@ -219,8 +237,6 @@ def main():
 
     # Loop over the entire dataset multiple times
     best_val_loss = 100
-
-    print(f"Task detected: {task}")
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
@@ -279,8 +295,9 @@ def main():
                 }
             )
 
-    # Save model parameters
-    save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
+        # Save model parameters
+        if get_config("sweep") == 0:
+            save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
 
     print("Finished Training")
 
