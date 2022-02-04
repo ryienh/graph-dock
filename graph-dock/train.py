@@ -54,7 +54,7 @@ def _train_epoch(data_loader, model, optimizer, device, threshold=None):
 
         prediction = model(X)
         prediction = torch.squeeze(prediction)
-        loss = model.loss(prediction, X.y, thresh)
+        loss = model.loss(prediction, X.y, threshold)
         loss.backward()
         optimizer.step()
 
@@ -77,12 +77,6 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task, threshol
 
     with torch.no_grad():
 
-        if threshold is not None:
-            thresh, _ = torch.sort(X.y)
-            thresh = thresh[int(X.y.shape[0] / 10)]
-        else:
-            thresh = None
-
         for X in tqdm.tqdm(val_loader):
 
             X = X.to(device)
@@ -91,11 +85,11 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task, threshol
 
             if task == Task.Reg:
                 prediction = torch.squeeze(logits)
-                loss = model.loss(prediction, X.y, thresh)
+                loss = model.loss(prediction, X.y, threshold)
             elif task == Task.Clf:
                 prediction = torch.argmax(logits, dim=1)
                 logits = torch.squeeze(logits)
-                loss = model.loss(logits, X.y, thresh)
+                loss = model.loss(logits, X.y, threshold)
 
             # loss calculation
             running_loss += loss.item() * X.num_graphs
