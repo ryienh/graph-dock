@@ -73,8 +73,11 @@ class GATCLF(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label, threshold):
-        label[label < self.threshold] = 1
+    def loss(self, pred, label, threshold=None):
+
+        assert threshold is not None
+
+        label[label < threshold] = 1
         label[label != 1] = 0
         label = label.long()
         pred = pred.float()
@@ -135,7 +138,7 @@ class AttentiveFPREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label):
+    def loss(self, pred, label, threshold=None):
         return torch.nn.functional.mse_loss(pred, label)
 
 
@@ -263,14 +266,16 @@ class PNACLF(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label):
-
+    def loss(self, pred, label, threshold=None):
+        assert threshold is not None
         # converts regresssion score into binary label based on specified threshold
-        label[label < self.threshold] = 1
+        label[label < threshold] = 1
         label[label != 1] = 0
         label = label.long()
         pred = pred.float()
-        return torch.nn.functional.cross_entropy(pred, label)
+        return torch.nn.functional.cross_entropy(
+            pred, label, weight=torch.FloatTensor([1.0, 10.0]).cuda()
+        )
 
 
 class PNAREG(torch.nn.Module):
