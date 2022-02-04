@@ -174,16 +174,19 @@ def calc_threshold(percentile, train_dataset):
     """
     if percentile is None:
         return None
-    if percentile.lower() == "none":
+    if percentile == "none" or percentile == "None" or percentile == "NONE":
         return None
 
     # FIXME: optimize
-    labels = torch.ones(
-        (0), dtype=torch.int32, device="cuda"
-    )  # FIXME: fix cuda hardcode
+    labels = []  # FIXME: fix cuda hardcode
     for data in train_dataset:
-        labels.cat(data.y)
+        labels.append(data.y)
 
+    labels = torch.cat([label for label in labels], dim=0)
     thresh, _ = torch.sort(labels)
-    thresh = thresh[int(labels.shape[0] / int(percentile * 100))]
+    idx = int(labels.shape[0] * (1 - percentile))
+    thresh = thresh[idx]
+    print(
+        f"DEBUG: chose idx {idx} out of length {labels.shape[0]} and percentile {percentile}"
+    )
     return thresh

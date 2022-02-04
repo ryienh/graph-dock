@@ -8,7 +8,6 @@ For questions or comments, contact rhosseini@anl.gov
 """
 
 from enum import Enum
-from sympy import hyper
 import torch
 from dataset import get_train_val_test_loaders
 from model import GINREG, PNAREG, PNACLF, GATREG, AttentiveFPREG, GATCLF
@@ -24,9 +23,16 @@ from sklearn.metrics import (
     f1_score,
     recall_score,
     precision_score,
+    confusion_matrix,
 )
 
-from utils import get_config, restore_checkpoint, save_checkpoint, get_degree_hist, calc_threshold
+from utils import (
+    get_config,
+    restore_checkpoint,
+    save_checkpoint,
+    get_degree_hist,
+    calc_threshold,
+)
 
 
 class Task(Enum):
@@ -105,8 +111,8 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
         predictions = np.array(predictions)
         labels = np.array(labels)
 
-        pseudo_preds = predictions > threshold
-        pseudo_labels = labels > threshold
+        pseudo_preds = predictions < threshold.item()
+        pseudo_labels = labels < threshold.item()
 
         return (
             running_loss,
@@ -123,6 +129,9 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
         )
     elif task == Task.Clf:
 
+        tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
+        frac_selected = (tp + fp) / (tn + fp + fn + tp)
+
         return (
             running_loss,
             accuracy_score(labels, predictions),
@@ -130,6 +139,7 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
             f1_score(labels, predictions),
             recall_score(labels, predictions),
             precision_score(labels, predictions),
+            frac_selected,
         )
     else:
         raise ValueError(f"Task must be one of Clf or Reg, not {task}")
@@ -141,7 +151,7 @@ def main():
         project="graph-dock",
         config=dict(
             architecture=get_config("model.name"),
-            threshold=get_config("model.threshold")
+            threshold=get_config("model.threshold"),
             learning_rate=get_config("model.learning_rate"),
             num_epochs=get_config("model.num_epochs"),
             batch_size=get_config("model.batch_size"),
@@ -150,7 +160,6 @@ def main():
             num_conv_layers=get_config("model.num_conv_layers"),
             dropout=get_config("model.dropout"),
             dataset=get_config("dataset_id"),
-            threshold=get_config("threshold"),
             num_heads=get_config("model.num_heads"),
             num_timesteps=get_config("model.num_timesteps"),
             output_dim=get_config("model.output_dim"),
@@ -267,21 +276,20 @@ def main():
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
     if get_config("sweep") == 0:
         print("Loading checkpoint...")
-        model, start_epoch = restore_checkpoint(
-            model, get_config("model.checkpoint")
-        )
+        model, start_epoch = restore_checkpoint(model, get_config("model.checkpoint"))
     else:
         start_epoch = 0
 
     # set threshold
     percentile = hyperparams["threshold"]
-    threshold = calc_threshold(percentile)
-    print(f"Threshold with chosen percentile{percentile} is {threshold}")
+    tr_loader.dataset.data.to(device)  # TODO: do this earlier for both tr and va
+    threshold = calc_threshold(percentile, tr_loader.dataset)
+    print(f"Threshold with chosen percentile {percentile} is {threshold}")
     wandb.run.summary["threshold"] = threshold
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, 0, device, task
+        va_loader, model, device, task, threshold
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
@@ -289,7 +297,7 @@ def main():
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
-        train_loss = _train_epoch(tr_loader, model, optimizer, device)
+        train_loss = _train_epoch(tr_loader, model, optimizer, device, threshold)
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
@@ -306,7 +314,8 @@ def main():
                 f1,
                 recall,
                 precision,
-            ) = _evaluate_epoch(va_loader, model, train_loss, device, task, threshold)
+            ) = _evaluate_epoch(va_loader, model, device, task, threshold)
+
         elif task == Task.Clf:
             (
                 val_loss,
@@ -315,7 +324,8 @@ def main():
                 f1,
                 recall,
                 precision,
-            ) = _evaluate_epoch(va_loader, model, train_loss, device, task, threshold)
+                frac_selected,
+            ) = _evaluate_epoch(va_loader, model, device, task, threshold)
         else:
             raise ValueError(
                 f'Invalid task, task must be one of "Clf" or "Reg" not {task}'
@@ -356,6 +366,7 @@ def main():
                     "f1": f1,
                     "recall": recall,
                     "precision": precision,
+                    "frac_selected": frac_selected,
                 }
             )
 
