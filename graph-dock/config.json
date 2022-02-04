@@ -3,17 +3,20 @@
     "clean_data_path": "./data/d4_dock_data_50k.csv",
     "dataset_id": "d4_50k_v0.2",
     "data_dir": "./data",
-    "sweep": 1,
-    "threshold": -1,
+    "sweep": 0,
     "model": {
-        "name": "PNACLFv0.1",
-        "checkpoint": "./checkpoints/",
+        "name": "GATCLFv0.1",
+        "checkpoint": "./checkpoints/false_neg_bias_3x_v02/",
+        "threshold": "None",
         "learning_rate": 1e-3,
-        "num_epochs": 250,
+        "num_epochs": 300,
         "batch_size": 128,
         "node_feature_size": 13,
-        "hidden_dim": 1024,
+        "hidden_dim": 64,
         "num_conv_layers": 3,
-        "dropout": 0.1
+        "dropout": 0.1,
+        "num_heads": 32,
+        "num_timesteps": 40,
+        "output_dim": 32
     }
 }

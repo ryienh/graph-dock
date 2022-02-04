@@ -9,11 +9,12 @@ parameters:
   batch_size:
     values: [128]
   hidden_dim:
-    values: [32, 64]
+    values: [32, 64, 128, 256, 512]
   num_conv_layers:
     values: [3, 4, 5]
   dropout:
     values: [0.0, 0.1, 0.3, 0.5]
   epochs:
     value: 300
-    
+  num_heads:
+    values: [1, 4, 8, 16, 32]
