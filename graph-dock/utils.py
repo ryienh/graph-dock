@@ -93,11 +93,11 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
     ]
 
     if not files:
-        print("No saved model parameters found")
+        print("No saved models found")
         if force:
             raise Exception("Checkpoint not found")
         else:
-            return model, 0, []
+            return model, 0
 
     # Find latest epoch
     for i in itertools.count(1):
@@ -108,37 +108,33 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
 
     if not force:
         print(
-            "Which epoch to load from? Choose in range [0, {}].".format(epoch),
-            "Enter 0 to train from scratch.",
+            f"Select epoch: Choose in range [0, {epoch}].",
+            "Entering 0 will train from scratch.",
         )
         print(">> ", end="")
-        inp_epoch = int(input())
-        if inp_epoch not in range(epoch + 1):
+        in_epoch = int(input())
+        if in_epoch not in range(epoch + 1):
             raise Exception("Invalid epoch number")
-        if inp_epoch == 0:
+        if in_epoch == 0:
             print("Checkpoint not loaded")
             clear_checkpoint(checkpoint_dir)
-            return model, 0, []
+            return model, 0
     else:
-        print("Which epoch to load from? Choose in range [1, {}].".format(epoch))
-        inp_epoch = int(input())
-        if inp_epoch not in range(1, epoch + 1):
+        print(f"Select epoch: Choose in range [1, {epoch}].")
+        in_epoch = int(input())
+        if in_epoch not in range(1, epoch + 1):
             raise Exception("Invalid epoch number")
 
-    filename = os.path.join(
-        checkpoint_dir, "epoch={}.checkpoint.pth.tar".format(inp_epoch)
-    )
+    filename = os.path.join(checkpoint_dir, f"epoch={in_epoch}.checkpoint.pth.tar")
 
     print("Loading from checkpoint {}?".format(filename))
 
     if cuda:
         checkpoint = torch.load(filename)
     else:
-        # Load GPU model on CPU
         checkpoint = torch.load(filename, map_location=lambda storage, loc: storage)
 
     try:
-        start_epoch = checkpoint["epoch"]
         if pretrain:
             model.load_state_dict(checkpoint["state_dict"], strict=False)
         else:
@@ -152,7 +148,7 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
         print("=> Checkpoint not successfully restored")
         raise
 
-    return model, inp_epoch
+    return model, in_epoch
 
 
 def clear_checkpoint(checkpoint_dir):
@@ -160,7 +156,7 @@ def clear_checkpoint(checkpoint_dir):
     for f in fnames:
         os.remove(os.path.join(checkpoint_dir, f))
 
-    print("Checkpoint successfully removed")
+    print("Checkpoint removed")
 
 
 def get_degree_hist(train_dataset):
