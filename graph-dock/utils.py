@@ -171,3 +171,25 @@ def get_degree_hist(train_dataset):
         d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
         deg += torch.bincount(d, minlength=deg.numel())
     return deg
+
+
+def calc_threshold(percentile, train_dataset):
+    """
+    Get absolute threshold for class weighing/classification from "Top X percent value"
+        e.g. percentile of 0.1 means "select top 10 percent of train labels as positive"
+    """
+    if percentile is None:
+        return None
+    if percentile.lower() == "none":
+        return None
+
+    # FIXME: optimize
+    labels = torch.ones(
+        (0), dtype=torch.int32, device="cuda"
+    )  # FIXME: fix cuda hardcode
+    for data in train_dataset:
+        labels.cat(data.y)
+
+    thresh, _ = torch.sort(labels)
+    thresh = thresh[int(labels.shape[0] / int(percentile * 100))]
+    return thresh

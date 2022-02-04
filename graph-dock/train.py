@@ -8,11 +8,13 @@ For questions or comments, contact rhosseini@anl.gov
 """
 
 from enum import Enum
+from sympy import hyper
 import torch
 from dataset import get_train_val_test_loaders
-from model import GINREG, PNAREG, PNACLF, GATREG
+from model import GINREG, PNAREG, PNACLF, GATREG, AttentiveFPREG, GATCLF
 import tqdm
 import wandb
+import numpy as np
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import (
     r2_score,
@@ -24,7 +26,7 @@ from sklearn.metrics import (
     precision_score,
 )
 
-from utils import get_config, restore_checkpoint, save_checkpoint, get_degree_hist
+from utils import get_config, restore_checkpoint, save_checkpoint, get_degree_hist, calc_threshold
 
 
 class Task(Enum):
@@ -33,7 +35,7 @@ class Task(Enum):
     Ukn = 3
 
 
-def _train_epoch(data_loader, model, optimizer, device):
+def _train_epoch(data_loader, model, optimizer, device, threshold=None):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -49,9 +51,10 @@ def _train_epoch(data_loader, model, optimizer, device):
         optimizer.zero_grad()
 
         # forward + backward + optimize
+
         prediction = model(X)
         prediction = torch.squeeze(prediction)
-        loss = model.loss(prediction, X.y)
+        loss = model.loss(prediction, X.y, thresh)
         loss.backward()
         optimizer.step()
 
@@ -64,14 +67,21 @@ def _train_epoch(data_loader, model, optimizer, device):
     #
 
 
-def _evaluate_epoch(val_loader, model, stats, train_loss, device, task):
+def _evaluate_epoch(val_loader, model, stats, train_loss, device, task, threshold=None):
 
     model = model.eval()
 
     running_loss = 0
     predictions = []
     labels = []
+
     with torch.no_grad():
+
+        if threshold is not None:
+            thresh, _ = torch.sort(X.y)
+            thresh = thresh[int(X.y.shape[0] / 10)]
+        else:
+            thresh = None
 
         for X in tqdm.tqdm(val_loader):
 
@@ -81,11 +91,11 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task):
 
             if task == Task.Reg:
                 prediction = torch.squeeze(logits)
-                loss = model.loss(prediction, X.y)
+                loss = model.loss(prediction, X.y, thresh)
             elif task == Task.Clf:
                 prediction = torch.argmax(logits, dim=1)
                 logits = torch.squeeze(logits)
-                loss = model.loss(logits, X.y)
+                loss = model.loss(logits, X.y, thresh)
 
             # loss calculation
             running_loss += loss.item() * X.num_graphs
@@ -98,6 +108,18 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task):
     stats.append([running_loss, train_loss])
 
     if task == Task.Reg:
+
+        # TODO check logic: may require two thresholds
+        predictions = np.array(predictions)
+        labels = np.array(labels)
+
+        if threshold is 
+        thresh = np.sort(predictions)
+        thresh = thresh[int(predictions.shape[0] / 10)]
+
+        pseudo_preds = predictions > thresh
+        pseudo_labels = labels > predictions
+
         return (
             running_loss,
             pearsonr(labels, predictions)[0],
@@ -105,8 +127,14 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task):
             spearmanr(labels, predictions)[0],
             kendalltau(labels, predictions)[0],
             mean_absolute_error(labels, predictions),
+            accuracy_score(pseudo_labels, pseudo_preds),
+            balanced_accuracy_score(pseudo_labels, pseudo_preds),
+            f1_score(pseudo_labels, pseudo_preds),
+            recall_score(pseudo_labels, pseudo_preds),
+            precision_score(pseudo_labels, pseudo_preds),
         )
     elif task == Task.Clf:
+
         return (
             running_loss,
             accuracy_score(labels, predictions),
@@ -125,6 +153,7 @@ def main():
         project="graph-dock",
         config=dict(
             architecture=get_config("model.name"),
+            threshold=get_config("model.threshold")
             learning_rate=get_config("model.learning_rate"),
             num_epochs=get_config("model.num_epochs"),
             batch_size=get_config("model.batch_size"),
@@ -135,6 +164,8 @@ def main():
             dataset=get_config("dataset_id"),
             threshold=get_config("threshold"),
             num_heads=get_config("model.num_heads"),
+            num_timesteps=get_config("model.num_timesteps"),
+            output_dim=get_config("model.output_dim"),
         ),
     )
 
@@ -151,6 +182,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device: ", device)
 
+    # TODO: move model instantiation to diff file
     # define model, loss function, task keyword, and optimizer
     model_name = hyperparams["architecture"]
     task = Task.Ukn
@@ -190,8 +222,6 @@ def main():
         task = Task.Clf
 
     elif model_name == "GATREGv0.1":
-        print(f"Node Feature size: ", hyperparams["node_feature_size"])
-        print(f"Node Feature size: ", hyperparams["node_feature_size"])
         model = GATREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
@@ -201,6 +231,31 @@ def main():
         )
         task = Task.Reg
 
+    elif model_name == "AttentiveFPREGv0.1":
+        model = AttentiveFPREG(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            num_out_channels=hyperparams["output_dim"],
+            edge_dim=1,
+            num_timesteps=hyperparams["num_timesteps"],
+        )
+
+        task = Task.Reg
+
+    elif model_name == "GATCLFv0.1":
+        model = GATCLF(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            heads=hyperparams["num_heads"],
+            threshold=hyperparams["threshold"],
+        )
+
+        task = Task.Clf
+
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
@@ -209,6 +264,7 @@ def main():
     model = model.to(torch.float64)
     model = model.to(device)
     wandb.watch(model, log_freq=1000)
+
     params = sum(p.numel() for p in model.parameters())
     print(f"Num parameters: {params}")
     wandb.run.summary["num_params"] = params
@@ -230,13 +286,19 @@ def main():
         start_epoch = 0
         stats = []
 
+    # set threshold
+    percentile = hyperparams["threshold"]
+    threshold = calc_threshold(percentile)
+    print(f"Threshold with chosen percentile{percentile} is {threshold}")
+    wandb.run.summary["threshold"] = threshold
+
     # Evaluate model
     _evaluate_epoch(
         va_loader, model, stats, 0, device, task
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
-    best_val_loss = 100
+    best_val_loss = float("inf")
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
@@ -245,9 +307,19 @@ def main():
 
         # Evaluate model
         if task == Task.Reg:
-            val_loss, pearson_coef, r2, spearman, kendall, mae = _evaluate_epoch(
-                va_loader, model, stats, train_loss, device, task
-            )
+            (
+                val_loss,
+                pearson_coef,
+                r2,
+                spearman,
+                kendall,
+                mae,
+                acc_score,
+                balanced_acc_score,
+                f1,
+                recall,
+                precision,
+            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task, threshold)
         elif task == Task.Clf:
             (
                 val_loss,
@@ -256,7 +328,7 @@ def main():
                 f1,
                 recall,
                 precision,
-            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task)
+            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task, threshold)
         else:
             raise ValueError(
                 f'Invalid task, task must be one of "Clf" or "Reg" not {task}'
@@ -280,6 +352,11 @@ def main():
                     "kendall": kendall,
                     "pearson": pearson_coef,
                     "MAE": mae,
+                    "acc_score": acc_score,
+                    "balanced_acc_score": balanced_acc_score,
+                    "f1": f1,
+                    "recall": recall,
+                    "precision": precision,
                 }
             )
         elif task == Task.Clf:
