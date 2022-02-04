@@ -71,11 +71,10 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def save_checkpoint(model, epoch, checkpoint_dir, stats):
+def save_checkpoint(model, epoch, checkpoint_dir):
     state = {
         "epoch": epoch,
         "state_dict": model.state_dict(),
-        "stats": stats,
     }
 
     filename = os.path.join(checkpoint_dir, "epoch={}.checkpoint.pth.tar".format(epoch))
@@ -140,7 +139,6 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
 
     try:
         start_epoch = checkpoint["epoch"]
-        stats = checkpoint["stats"]
         if pretrain:
             model.load_state_dict(checkpoint["state_dict"], strict=False)
         else:
@@ -154,7 +152,7 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
         print("=> Checkpoint not successfully restored")
         raise
 
-    return model, inp_epoch, stats
+    return model, inp_epoch
 
 
 def clear_checkpoint(checkpoint_dir):

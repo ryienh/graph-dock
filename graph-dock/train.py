@@ -67,7 +67,7 @@ def _train_epoch(data_loader, model, optimizer, device, threshold=None):
     #
 
 
-def _evaluate_epoch(val_loader, model, stats, train_loss, device, task, threshold=None):
+def _evaluate_epoch(val_loader, model, device, task, threshold=None):
 
     model = model.eval()
 
@@ -99,20 +99,14 @@ def _evaluate_epoch(val_loader, model, stats, train_loss, device, task, threshol
 
         running_loss /= len(val_loader.dataset)
 
-    stats.append([running_loss, train_loss])
-
     if task == Task.Reg:
 
         # TODO check logic: may require two thresholds
         predictions = np.array(predictions)
         labels = np.array(labels)
 
-        if threshold is 
-        thresh = np.sort(predictions)
-        thresh = thresh[int(predictions.shape[0] / 10)]
-
-        pseudo_preds = predictions > thresh
-        pseudo_labels = labels > predictions
+        pseudo_preds = predictions > threshold
+        pseudo_labels = labels > threshold
 
         return (
             running_loss,
@@ -273,12 +267,11 @@ def main():
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
     if get_config("sweep") == 0:
         print("Loading checkpoint...")
-        model, start_epoch, stats = restore_checkpoint(
+        model, start_epoch = restore_checkpoint(
             model, get_config("model.checkpoint")
         )
     else:
         start_epoch = 0
-        stats = []
 
     # set threshold
     percentile = hyperparams["threshold"]
@@ -288,7 +281,7 @@ def main():
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, stats, 0, device, task
+        va_loader, model, 0, device, task
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
@@ -313,7 +306,7 @@ def main():
                 f1,
                 recall,
                 precision,
-            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task, threshold)
+            ) = _evaluate_epoch(va_loader, model, train_loss, device, task, threshold)
         elif task == Task.Clf:
             (
                 val_loss,
@@ -322,7 +315,7 @@ def main():
                 f1,
                 recall,
                 precision,
-            ) = _evaluate_epoch(va_loader, model, stats, train_loss, device, task, threshold)
+            ) = _evaluate_epoch(va_loader, model, train_loss, device, task, threshold)
         else:
             raise ValueError(
                 f'Invalid task, task must be one of "Clf" or "Reg" not {task}'
@@ -368,7 +361,7 @@ def main():
 
         # Save model parameters
         if get_config("sweep") == 0:
-            save_checkpoint(model, epoch + 1, get_config("model.checkpoint"), stats)
+            save_checkpoint(model, epoch + 1, get_config("model.checkpoint"))
 
     print("Finished Training")
 
