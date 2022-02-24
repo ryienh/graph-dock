@@ -34,13 +34,6 @@ from utils import (
     calc_threshold,
 )
 
-
-class Task(Enum):
-    Clf = 1
-    Reg = 2
-    Ukn = 3
-
-
 def _train_epoch(data_loader, model, optimizer, device, threshold=None):
     """
     Train the `model` for one epoch of data from `data_loader`
@@ -87,15 +80,9 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
 
             X = X.to(device)
 
-            logits = model(X)
-
-            if task == Task.Reg:
-                prediction = torch.squeeze(logits)
-                loss = model.loss(prediction, X.y, threshold)
-            elif task == Task.Clf:
-                prediction = torch.argmax(logits, dim=1)
-                logits = torch.squeeze(logits)
-                loss = model.loss(logits, X.y, threshold)
+            logits = model(X)   
+            prediction = torch.squeeze(logits)
+            loss = model.loss(prediction, X.y, threshold)
 
             # loss calculation
             running_loss += loss.item() * X.num_graphs
@@ -105,44 +92,27 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
 
         running_loss /= len(val_loader.dataset)
 
-    if task == Task.Reg:
+    # TODO check logic: may require two thresholds
+    predictions = np.array(predictions)
+    labels = np.array(labels)
 
-        # TODO check logic: may require two thresholds
-        predictions = np.array(predictions)
-        labels = np.array(labels)
+    pseudo_preds = predictions < threshold.item()
+    pseudo_labels = labels < threshold.item()
 
-        pseudo_preds = predictions < threshold.item()
-        pseudo_labels = labels < threshold.item()
+    return (
+        running_loss,
+        pearsonr(labels, predictions)[0],
+        r2_score(labels, predictions),
+        spearmanr(labels, predictions)[0],
+        kendalltau(labels, predictions)[0],
+        mean_absolute_error(labels, predictions),
+        accuracy_score(pseudo_labels, pseudo_preds),
+        balanced_accuracy_score(pseudo_labels, pseudo_preds),
+        f1_score(pseudo_labels, pseudo_preds),
+        recall_score(pseudo_labels, pseudo_preds),
+        precision_score(pseudo_labels, pseudo_preds),
+    )
 
-        return (
-            running_loss,
-            pearsonr(labels, predictions)[0],
-            r2_score(labels, predictions),
-            spearmanr(labels, predictions)[0],
-            kendalltau(labels, predictions)[0],
-            mean_absolute_error(labels, predictions),
-            accuracy_score(pseudo_labels, pseudo_preds),
-            balanced_accuracy_score(pseudo_labels, pseudo_preds),
-            f1_score(pseudo_labels, pseudo_preds),
-            recall_score(pseudo_labels, pseudo_preds),
-            precision_score(pseudo_labels, pseudo_preds),
-        )
-    elif task == Task.Clf:
-
-        tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
-        frac_selected = (tp + fp) / (tn + fp + fn + tp)
-
-        return (
-            running_loss,
-            accuracy_score(labels, predictions),
-            balanced_accuracy_score(labels, predictions),
-            f1_score(labels, predictions),
-            recall_score(labels, predictions),
-            precision_score(labels, predictions),
-            frac_selected,
-        )
-    else:
-        raise ValueError(f"Task must be one of Clf or Reg, not {task}")
 
 
 def main():
@@ -180,9 +150,8 @@ def main():
     print("Using device: ", device)
 
     # TODO: move model instantiation to diff file
-    # define model, loss function, task keyword, and optimizer
+    # define model, loss function, and optimizer
     model_name = hyperparams["architecture"]
-    task = Task.Ukn
 
     if model_name == "GINREGv0.1":
         model = GINREG(
@@ -191,7 +160,6 @@ def main():
             dropout=hyperparams["dropout"],
             num_conv_layers=hyperparams["num_conv_layers"],
         )
-        task = Task.Reg
 
     elif model_name == "PNAREGv0.1":
         deg = get_degree_hist(tr_loader.dataset)
@@ -203,20 +171,6 @@ def main():
             num_conv_layers=hyperparams["num_conv_layers"],
             deg=deg,
         )
-        task = Task.Reg
-
-    elif model_name == "PNACLFv0.1":
-        deg = get_degree_hist(tr_loader.dataset)
-        deg.to(device)
-        model = PNACLF(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-            deg=deg,
-            threshold=hyperparams["threshold"],
-        )
-        task = Task.Clf
 
     elif model_name == "GATREGv0.1":
         model = GATREG(
@@ -226,7 +180,6 @@ def main():
             num_conv_layers=hyperparams["num_conv_layers"],
             heads=hyperparams["num_heads"],
         )
-        task = Task.Reg
 
     elif model_name == "AttentiveFPREGv0.1":
         model = AttentiveFPREG(
@@ -239,24 +192,8 @@ def main():
             num_timesteps=hyperparams["num_timesteps"],
         )
 
-        task = Task.Reg
-
-    elif model_name == "GATCLFv0.1":
-        model = GATCLF(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-            heads=hyperparams["num_heads"],
-            threshold=hyperparams["threshold"],
-        )
-
-        task = Task.Clf
-
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
-
-    print(f"Task detected: {task}")
 
     model = model.to(torch.float64)
     model = model.to(device)
@@ -301,35 +238,20 @@ def main():
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
-        if task == Task.Reg:
-            (
-                val_loss,
-                pearson_coef,
-                r2,
-                spearman,
-                kendall,
-                mae,
-                acc_score,
-                balanced_acc_score,
-                f1,
-                recall,
-                precision,
-            ) = _evaluate_epoch(va_loader, model, device, task, threshold)
+        (
+            val_loss,
+            pearson_coef,
+            r2,
+            spearman,
+            kendall,
+            mae,
+            acc_score,
+            balanced_acc_score,
+            f1,
+            recall,
+            precision,
+        ) = _evaluate_epoch(va_loader, model, device, task, threshold)
 
-        elif task == Task.Clf:
-            (
-                val_loss,
-                acc_score,
-                balanced_acc_score,
-                f1,
-                recall,
-                precision,
-                frac_selected,
-            ) = _evaluate_epoch(va_loader, model, device, task, threshold)
-        else:
-            raise ValueError(
-                f'Invalid task, task must be one of "Clf" or "Reg" not {task}'
-            )
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
         # update if best val loss
@@ -339,36 +261,22 @@ def main():
             wandb.run.summary["best_val_loss_epoch"] = epoch
 
         # Call logger
-        if task == Task.Reg:
-            wandb.log(
-                {
-                    "train_loss": train_loss,
-                    "val_loss": val_loss,
-                    "r2_score": r2,
-                    "spearman": spearman,
-                    "kendall": kendall,
-                    "pearson": pearson_coef,
-                    "MAE": mae,
-                    "acc_score": acc_score,
-                    "balanced_acc_score": balanced_acc_score,
-                    "f1": f1,
-                    "recall": recall,
-                    "precision": precision,
-                }
-            )
-        elif task == Task.Clf:
-            wandb.log(
-                {
-                    "train_loss": train_loss,
-                    "val_loss": val_loss,
-                    "acc_score": acc_score,
-                    "balanced_acc_score": balanced_acc_score,
-                    "f1": f1,
-                    "recall": recall,
-                    "precision": precision,
-                    "frac_selected": frac_selected,
-                }
-            )
+        wandb.log(
+            {
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "r2_score": r2,
+                "spearman": spearman,
+                "kendall": kendall,
+                "pearson": pearson_coef,
+                "MAE": mae,
+                "acc_score": acc_score,
+                "balanced_acc_score": balanced_acc_score,
+                "f1": f1,
+                "recall": recall,
+                "precision": precision,
+            }
+        )
 
         # Save model parameters
         if get_config("sweep") == 0:
