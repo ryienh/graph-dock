@@ -10,10 +10,11 @@ For questions or comments, contact rhosseini@anl.gov
 from enum import Enum
 import torch
 from dataset import get_train_val_test_loaders
-from model import GINREG, PNAREG, PNACLF, GATREG, AttentiveFPREG, GATCLF
+from model import *
 import tqdm
 import wandb
 import numpy as np
+import os
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import (
     r2_score,
@@ -34,7 +35,7 @@ from utils import (
     calc_threshold,
 )
 
-def _train_epoch(data_loader, model, optimizer, device, threshold=None):
+def _train_epoch(data_loader, model, optimizer, device, exp_weighing):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -53,7 +54,7 @@ def _train_epoch(data_loader, model, optimizer, device, threshold=None):
 
         prediction = model(X)
         prediction = torch.squeeze(prediction)
-        loss = model.loss(prediction, X.y, threshold)
+        loss = model.loss(prediction, X.y, exp_weighing)
         loss.backward()
         optimizer.step()
 
@@ -66,7 +67,7 @@ def _train_epoch(data_loader, model, optimizer, device, threshold=None):
     #
 
 
-def _evaluate_epoch(val_loader, model, device, task, threshold=None):
+def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
 
     model = model.eval()
 
@@ -82,7 +83,7 @@ def _evaluate_epoch(val_loader, model, device, task, threshold=None):
 
             logits = model(X)   
             prediction = torch.squeeze(logits)
-            loss = model.loss(prediction, X.y, threshold)
+            loss = model.loss(prediction, X.y, exp_weighing)
 
             # loss calculation
             running_loss += loss.item() * X.num_graphs
@@ -122,6 +123,7 @@ def main():
         config=dict(
             architecture=get_config("model.name"),
             threshold=get_config("model.threshold"),
+            exp_weighing=get_config("model.exp_weighing"),
             learning_rate=get_config("model.learning_rate"),
             num_epochs=get_config("model.num_epochs"),
             batch_size=get_config("model.batch_size"),
@@ -213,7 +215,12 @@ def main():
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
     if get_config("sweep") == 0:
         print("Loading checkpoint...")
-        model, start_epoch = restore_checkpoint(model, get_config("model.checkpoint"))
+        config_pth = get_config("model.checkpoint")
+        pth = f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}' if config_pth.lower() == "auto" else config_path
+        if os.path.exists(pth):
+            model, start_epoch = restore_checkpoint(model, pth)
+        else:
+            start_epoch = 0
     else:
         start_epoch = 0
 
@@ -224,9 +231,12 @@ def main():
     print(f"Threshold with chosen percentile {percentile} is {threshold}")
     wandb.run.summary["threshold"] = threshold
 
+    # exp weighing 
+    exp_weighing = hyperparams["exp_weighing"]
+
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, device, task, threshold
+        va_loader, model, device, threshold, exp_weighing
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
@@ -234,7 +244,7 @@ def main():
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
-        train_loss = _train_epoch(tr_loader, model, optimizer, device, threshold)
+        train_loss = _train_epoch(tr_loader, model, optimizer, device, exp_weighing)
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
@@ -250,7 +260,7 @@ def main():
             f1,
             recall,
             precision,
-        ) = _evaluate_epoch(va_loader, model, device, task, threshold)
+        ) = _evaluate_epoch(va_loader, model, device, threshold, exp_weighing)
 
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
@@ -280,7 +290,11 @@ def main():
 
         # Save model parameters
         if get_config("sweep") == 0:
-            save_checkpoint(model, epoch + 1, get_config("model.checkpoint"))
+            config_pth = get_config("model.checkpoint")
+            pth = f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}' if config_pth.lower() == "auto" else config_path
+            if not os.path.exists(pth):
+                os.makedirs(pth, exist_ok=False)
+            save_checkpoint(model, epoch + 1, pth)
 
     print("Finished Training")
 

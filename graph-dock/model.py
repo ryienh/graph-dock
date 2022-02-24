@@ -64,9 +64,16 @@ class AttentiveFPREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label, threshold=None):
-        return torch.nn.functional.mse_loss(pred, label)
+    def loss(self, pred, label, exp_weighing=0):
+        
+        # vanilla mse loss if no coef given 
+        if exp_weighing == 0:
+             return torch.nn.functional.mse_loss(pred, label)
 
+        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
+        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
+        weights = torch.exp(exp_weighing * label)
+        return (weights*out).mean()
 
 class GATREG(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers, heads):
@@ -122,15 +129,16 @@ class GATREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label, threshold=None):
+    def loss(self, pred, label, exp_weighing=0):
+        
+        # vanilla mse loss if no coef given 
+        if exp_weighing == 0:
+             return torch.nn.functional.mse_loss(pred, label)
 
+        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        # prenorm = torch.norm(out)
-        weights = torch.exp(-1.5 * label)
-        out = weights * out
-        # out = (out / torch.norm(out)) * prenorm
-        out = out.mean()
-        return out
+        weights = torch.exp(exp_weighing * label)
+        return (weights*out).mean()
 
 class PNAREG(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers, deg):
@@ -190,12 +198,16 @@ class PNAREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label):
+    def loss(self, pred, label, exp_weighing=0):
+        
+        # vanilla mse loss if no coef given 
+        if exp_weighing == 0:
+             return torch.nn.functional.mse_loss(pred, label)
+
+        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1.5 * label)
-        out = weights * out
-        out = out.mean()
-        return out
+        weights = torch.exp(exp_weighing * label)
+        return (weights*out).mean()
 
 
 class GINREG(torch.nn.Module):
@@ -256,5 +268,13 @@ class GINREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label):
-        return torch.nn.functional.mse_loss(pred, label)
+    def loss(self, pred, label, exp_weighing=0):
+        
+        # vanilla mse loss if no coef given 
+        if exp_weighing == 0:
+             return torch.nn.functional.mse_loss(pred, label)
+
+        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
+        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
+        weights = torch.exp(exp_weighing * label)
+        return (weights*out).mean()
