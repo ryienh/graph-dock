@@ -15,6 +15,7 @@ Graph convolutional network for graph regression task
 For questions or comments, contact rhosseini@anl.gov
 """
 
+
 class AttentiveFPREG(torch.nn.Module):
     def __init__(
         self,
@@ -65,15 +66,16 @@ class AttentiveFPREG(torch.nn.Module):
         return x
 
     def loss(self, pred, label, exp_weighing=0):
-        
-        # vanilla mse loss if no coef given 
+
+        # vanilla mse loss if no coef given
         if exp_weighing == 0:
-             return torch.nn.functional.mse_loss(pred, label)
+            return torch.nn.functional.mse_loss(pred, label)
 
         # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(exp_weighing * label)
-        return (weights*out).mean()
+        weights = torch.exp(-1 * exp_weighing * label)
+        return (weights * out).mean()
+
 
 class GATREG(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers, heads):
@@ -97,9 +99,7 @@ class GATREG(torch.nn.Module):
 
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, int(hidden_dim / 2)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(hidden_dim / 2), 1),
+            torch.nn.Linear(hidden_dim, 1),
         )
 
     def build_conv_model(self, input_dim, hidden_dim, heads):
@@ -130,15 +130,16 @@ class GATREG(torch.nn.Module):
         return x
 
     def loss(self, pred, label, exp_weighing=0):
-        
-        # vanilla mse loss if no coef given 
+
+        # vanilla mse loss if no coef given
         if exp_weighing == 0:
-             return torch.nn.functional.mse_loss(pred, label)
+            return torch.nn.functional.mse_loss(pred, label)
 
         # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(exp_weighing * label)
-        return (weights*out).mean()
+        weights = torch.exp(-1 * exp_weighing * label)
+        return (weights * out).mean()
+
 
 class PNAREG(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers, deg):
@@ -162,9 +163,7 @@ class PNAREG(torch.nn.Module):
 
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, int(hidden_dim / 2)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(hidden_dim / 2), 1),
+            torch.nn.Linear(hidden_dim, 1),
         )
 
     def build_conv_model(self, input_dim, hidden_dim, deg):
@@ -199,15 +198,15 @@ class PNAREG(torch.nn.Module):
         return x
 
     def loss(self, pred, label, exp_weighing=0):
-        
-        # vanilla mse loss if no coef given 
+
+        # vanilla mse loss if no coef given
         if exp_weighing == 0:
-             return torch.nn.functional.mse_loss(pred, label)
+            return torch.nn.functional.mse_loss(pred, label)
 
         # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(exp_weighing * label)
-        return (weights*out).mean()
+        weights = torch.exp(-1 * exp_weighing * label)
+        return (weights * out).mean()
 
 
 class GINREG(torch.nn.Module):
@@ -232,9 +231,7 @@ class GINREG(torch.nn.Module):
 
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, int(hidden_dim / 2)),
-            torch.nn.ReLU(),
-            torch.nn.Linear(int(hidden_dim / 2), 1),
+            torch.nn.Linear(hidden_dim, 1),
         )
 
     def build_conv_model(self, input_dim, hidden_dim):
@@ -269,12 +266,12 @@ class GINREG(torch.nn.Module):
         return x
 
     def loss(self, pred, label, exp_weighing=0):
-        
-        # vanilla mse loss if no coef given 
+
+        # vanilla mse loss if no coef given
         if exp_weighing == 0:
-             return torch.nn.functional.mse_loss(pred, label)
+            return torch.nn.functional.mse_loss(pred, label)
 
         # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
         out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(exp_weighing * label)
-        return (weights*out).mean()
+        weights = torch.exp(-1 * exp_weighing * label)
+        return (weights * out).mean()
