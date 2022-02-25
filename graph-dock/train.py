@@ -35,6 +35,7 @@ from utils import (
     calc_threshold,
 )
 
+
 def _train_epoch(data_loader, model, optimizer, device, exp_weighing):
     """
     Train the `model` for one epoch of data from `data_loader`
@@ -81,7 +82,7 @@ def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
 
             X = X.to(device)
 
-            logits = model(X)   
+            logits = model(X)
             prediction = torch.squeeze(logits)
             loss = model.loss(prediction, X.y, exp_weighing)
 
@@ -113,7 +114,6 @@ def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
         recall_score(pseudo_labels, pseudo_preds),
         precision_score(pseudo_labels, pseudo_preds),
     )
-
 
 
 def main():
@@ -216,7 +216,11 @@ def main():
     if get_config("sweep") == 0:
         print("Loading checkpoint...")
         config_pth = get_config("model.checkpoint")
-        pth = f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}' if config_pth.lower() == "auto" else config_path
+        pth = (
+            f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}'
+            if config_pth.lower() == "auto"
+            else config_path
+        )
         if os.path.exists(pth):
             model, start_epoch = restore_checkpoint(model, pth)
         else:
@@ -231,7 +235,7 @@ def main():
     print(f"Threshold with chosen percentile {percentile} is {threshold}")
     wandb.run.summary["threshold"] = threshold
 
-    # exp weighing 
+    # exp weighing
     exp_weighing = hyperparams["exp_weighing"]
 
     # Evaluate model
@@ -291,7 +295,11 @@ def main():
         # Save model parameters
         if get_config("sweep") == 0:
             config_pth = get_config("model.checkpoint")
-            pth = f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}' if config_pth.lower() == "auto" else config_path
+            pth = (
+                f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}'
+                if config_pth.lower() == "auto"
+                else config_pth
+            )
             if not os.path.exists(pth):
                 os.makedirs(pth, exist_ok=False)
             save_checkpoint(model, epoch + 1, pth)
