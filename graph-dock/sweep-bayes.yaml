@@ -1,0 +1,30 @@
+program: graph-dock/train.py
+method: bayes
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  learning_rate:
+    distribution: log_uniform
+    min: -4
+    max: -2
+  batch_size:
+    values: [512]
+  hidden_dim:
+    values: [32, 64, 128, 256, 512]
+  num_conv_layers:
+    values: [3, 4, 5, 6]
+  dropout:
+     distribution: uniform
+     min: 0
+     max: 1
+  epochs:
+    value: 200
+  num_heads:
+    values: [1, 4, 8, 16, 32, 64]
+early_terminate:
+  type: hyperband
+  s: 2
+  eta: 3
+  max_iter: 200
+  
