@@ -45,7 +45,7 @@ class AttentiveFPREG(torch.nn.Module):
             torch.nn.Linear(num_out_channels, 1),
         )
 
-    def forward(self, data, threshold=None):
+    def forward(self, data):
         x, edge_index, batch, edge_attr = (
             data.x,
             data.edge_index,
@@ -107,7 +107,7 @@ class GATREG(torch.nn.Module):
             in_channels=input_dim, out_channels=hidden_dim, heads=heads, concat=False
         )
 
-    def forward(self, data, threshold=None):
+    def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
@@ -175,7 +175,7 @@ class PNAREG(torch.nn.Module):
             deg=deg,
         )
 
-    def forward(self, data, threshold=None):
+    def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
@@ -243,7 +243,7 @@ class GINREG(torch.nn.Module):
             )
         )
 
-    def forward(self, data, threshold=None):
+    def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
