@@ -35,8 +35,25 @@ from utils import (
     calc_threshold,
 )
 
+# multiprocess imports
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-def _train_epoch(data_loader, model, optimizer, device, exp_weighing):
+
+def setup(rank, world_size):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def _train_epoch(data_loader, model, optimizer, rank, exp_weighing):
     """
     Train the `model` for one epoch of data from `data_loader`
     Use `optimizer` to optimize the specified `criterion`
@@ -46,7 +63,7 @@ def _train_epoch(data_loader, model, optimizer, device, exp_weighing):
 
     for X in tqdm.tqdm(data_loader):
 
-        X = X.to(device)  # FIXME: fix dataloading issue
+        X = X.to(rank)  # FIXME: fix dataloading issue
 
         # clear parameter gradients
         optimizer.zero_grad()
@@ -68,7 +85,7 @@ def _train_epoch(data_loader, model, optimizer, device, exp_weighing):
     #
 
 
-def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
+def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
     model = model.eval()
 
@@ -80,7 +97,7 @@ def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
 
         for X in tqdm.tqdm(val_loader):
 
-            X = X.to(device)
+            X = X.to(rank)
 
             logits = model(X)
             prediction = torch.squeeze(logits)
@@ -116,47 +133,54 @@ def _evaluate_epoch(val_loader, model, device, threshold, exp_weighing):
     )
 
 
-def main():
+def main(rank, world_size):
     # init wandb logger
-    wandb.init(
-        project="graph-dock",
-        config=dict(
-            architecture=get_config("model.name"),
-            threshold=get_config("model.threshold"),
-            exp_weighing=get_config("model.exp_weighing"),
-            learning_rate=get_config("model.learning_rate"),
-            num_epochs=get_config("model.num_epochs"),
-            batch_size=get_config("model.batch_size"),
-            node_feature_size=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            dropout=get_config("model.dropout"),
-            dataset=get_config("dataset_id"),
-            num_heads=get_config("model.num_heads"),
-            num_timesteps=get_config("model.num_timesteps"),
-            output_dim=get_config("model.output_dim"),
-        ),
-    )
+    if rank == 0 or rank is None:
+        print("In rank 0")
+        wandb.init(
+            project="graph-dock",
+            config=dict(
+                architecture=get_config("model.name"),
+                threshold=get_config("model.threshold"),
+                exp_weighing=get_config("model.exp_weighing"),
+                learning_rate=get_config("model.learning_rate"),
+                num_epochs=get_config("model.num_epochs"),
+                batch_size=get_config("model.batch_size"),
+                node_feature_size=get_config("model.node_feature_size"),
+                hidden_dim=get_config("model.hidden_dim"),
+                num_conv_layers=get_config("model.num_conv_layers"),
+                dropout=get_config("model.dropout"),
+                dataset=get_config("dataset_id"),
+                num_heads=get_config("model.num_heads"),
+                num_timesteps=get_config("model.num_timesteps"),
+                output_dim=get_config("model.output_dim"),
+            ),
+        )
 
     hyperparams = wandb.config
 
     # generate data or load from file
     print("Starting training...")
 
+    if rank is not None:
+        # create default process group
+        setup(rank, world_size)
+
     tr_loader, va_loader, _ = get_train_val_test_loaders(
         batch_size=hyperparams["batch_size"]
     )
 
     # cuda
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print("Using device: ", device)
+    if rank is None:
+        rank = "cuda" if torch.cuda.is_available() else "cpu"
+        print("Using device: ", rank)
 
     # TODO: move model instantiation to diff file
     # define model, loss function, and optimizer
     model_name = hyperparams["architecture"]
 
     if model_name == "GINREGv0.1":
-        model = GINREG(
+        model_ = GINREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],
@@ -165,8 +189,8 @@ def main():
 
     elif model_name == "PNAREGv0.1":
         deg = get_degree_hist(tr_loader.dataset)
-        deg.to(device)
-        model = PNAREG(
+        deg.to(rank)
+        model_ = PNAREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],
@@ -175,7 +199,7 @@ def main():
         )
 
     elif model_name == "GATREGv0.1":
-        model = GATREG(
+        model_ = GATREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],
@@ -184,7 +208,7 @@ def main():
         )
 
     elif model_name == "AttentiveFPREGv0.1":
-        model = AttentiveFPREG(
+        model_ = AttentiveFPREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],
@@ -197,8 +221,14 @@ def main():
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
-    model = model.to(torch.float64)
-    model = model.to(device)
+    model_ = model_.to(torch.float64)
+    model_ = model_.to(rank)
+
+    if world_size is not None:
+        model = DDP(model_, device_ids=[rank])
+    else:
+        model = model_
+
     wandb.watch(model, log_freq=1000)
 
     params = sum(p.numel() for p in model.parameters())
@@ -230,7 +260,7 @@ def main():
 
     # set threshold
     percentile = hyperparams["threshold"]
-    tr_loader.dataset.data.to(device)  # TODO: do this earlier for both tr and va
+    tr_loader.dataset.data.to(rank)  # TODO: do this earlier for both tr and va
     threshold = calc_threshold(percentile, tr_loader.dataset)
     print(f"Threshold with chosen percentile {percentile} is {threshold}")
     wandb.run.summary["threshold"] = threshold
@@ -240,7 +270,7 @@ def main():
 
     # Evaluate model
     _evaluate_epoch(
-        va_loader, model, device, threshold, exp_weighing
+        va_loader, model, rank, threshold, exp_weighing
     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
@@ -248,7 +278,7 @@ def main():
 
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
-        train_loss = _train_epoch(tr_loader, model, optimizer, device, exp_weighing)
+        train_loss = _train_epoch(tr_loader, model, optimizer, rank, exp_weighing)
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
         # Evaluate model
@@ -264,7 +294,7 @@ def main():
             f1,
             recall,
             precision,
-        ) = _evaluate_epoch(va_loader, model, device, threshold, exp_weighing)
+        ) = _evaluate_epoch(va_loader, model, rank, threshold, exp_weighing)
 
         print(f"Val loss for epoch {epoch} is {val_loss}.")
 
@@ -308,4 +338,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    RUN_WITH_MP = False
+
+    if RUN_WITH_MP:
+        WANDB_START_METHOD = "thread"
+        world_size = 1
+        mp.spawn(main, args=(world_size,), nprocs=world_size, join=True)
+    else:
+        main(None, None)
