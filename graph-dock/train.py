@@ -7,12 +7,14 @@ Train multiple models
 For questions or comments, contact rhosseini@anl.gov
 """
 
-from enum import Enum
 import torch
-from dataset import get_train_val_test_loaders
+import torch_geometric
+from torch_geometric.loader import DataLoader
+from dataset import get_train_val_test_loaders, get_train_val_test_dataset
 from model import *
 import tqdm
 import wandb
+import random
 import numpy as np
 import os
 from scipy.stats import pearsonr, spearmanr, kendalltau
@@ -24,7 +26,6 @@ from sklearn.metrics import (
     f1_score,
     recall_score,
     precision_score,
-    confusion_matrix,
 )
 
 from utils import (
@@ -39,9 +40,26 @@ from utils import (
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+
+from temp import VirtualNode
+
+
+# temp loss function for ddp FIXME
+def loss(pred, label, exp_weighing=0):
+
+    # vanilla mse loss if no coef given
+    if exp_weighing == 0:
+        return torch.nn.functional.mse_loss(pred, label)
+
+    # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
+    out = torch.nn.functional.mse_loss(pred, label, reduction="none")
+    weights = torch.exp(-1 * exp_weighing * label)
+    return (weights * out).mean()
 
 
 def setup(rank, world_size):
+    # cleanup()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
 
@@ -72,12 +90,13 @@ def _train_epoch(data_loader, model, optimizer, rank, exp_weighing):
 
         prediction = model(X)
         prediction = torch.squeeze(prediction)
-        loss = model.loss(prediction, X.y, exp_weighing)
-        loss.backward()
+        # loss = model.loss(prediction, X.y, exp_weighing)
+        my_loss = loss(prediction, X.y, exp_weighing)
+        my_loss.backward()
         optimizer.step()
 
         # calculate loss
-        running_loss += loss.item() * X.num_graphs
+        running_loss += my_loss.item() * X.num_graphs
 
     running_loss /= len(data_loader.dataset)
 
@@ -101,10 +120,10 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
             logits = model(X)
             prediction = torch.squeeze(logits)
-            loss = model.loss(prediction, X.y, exp_weighing)
+            my_loss = loss(prediction, X.y, exp_weighing)
 
             # loss calculation
-            running_loss += loss.item() * X.num_graphs
+            running_loss += my_loss.item() * X.num_graphs
 
             predictions += prediction.tolist()
             labels += X.y.tolist()
@@ -134,6 +153,12 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
 
 def main(rank, world_size):
+
+    # seed everything -- warning cuDNN, dataloaders, scat/gath ops not seeded
+    torch.manual_seed(100)
+    random.seed(100)
+    np.random.seed(100)
+
     # init wandb logger
     if rank == 0 or rank is None:
         print("In rank 0")
@@ -156,8 +181,25 @@ def main(rank, world_size):
                 output_dim=get_config("model.output_dim"),
             ),
         )
+        hyperparams = wandb.config
 
-    hyperparams = wandb.config
+    else:
+        hyperparams = dict(
+            architecture=get_config("model.name"),
+            threshold=get_config("model.threshold"),
+            exp_weighing=get_config("model.exp_weighing"),
+            learning_rate=get_config("model.learning_rate"),
+            num_epochs=get_config("model.num_epochs"),
+            batch_size=get_config("model.batch_size"),
+            node_feature_size=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+            dropout=get_config("model.dropout"),
+            dataset=get_config("dataset_id"),
+            num_heads=get_config("model.num_heads"),
+            num_timesteps=get_config("model.num_timesteps"),
+            output_dim=get_config("model.output_dim"),
+        )
 
     # generate data or load from file
     print("Starting training...")
@@ -166,9 +208,29 @@ def main(rank, world_size):
         # create default process group
         setup(rank, world_size)
 
-    tr_loader, va_loader, _ = get_train_val_test_loaders(
-        batch_size=hyperparams["batch_size"]
-    )
+    data_transform = torch_geometric.transforms.Compose([VirtualNode()])
+
+    if rank == 0:
+        _, va_loader, _ = get_train_val_test_loaders(
+            batch_size=hyperparams["batch_size"], transform=data_transform
+        )
+
+    if rank is not None:
+        train_dataset, _, _ = get_train_val_test_dataset(transform=data_transform)
+        tr_sampler = DistributedSampler(
+            train_dataset, num_replicas=world_size, rank=rank
+        )
+        tr_loader = DataLoader(
+            train_dataset,
+            batch_size=hyperparams["batch_size"],
+            shuffle=False,  # bc we are using sampler
+            pin_memory=False,
+            sampler=tr_sampler,
+        )
+    else:  # rank is None
+        tr_loader, va_loader, _ = get_train_val_test_loaders(
+            batch_size=hyperparams["batch_size"], transform=data_transform
+        )
 
     # cuda
     if rank is None:
@@ -179,7 +241,16 @@ def main(rank, world_size):
     # define model, loss function, and optimizer
     model_name = hyperparams["architecture"]
 
-    if model_name == "GINREGv0.1":
+    if model_name == "NovelRegv0.1":
+        model_ = NovelReg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+            heads=hyperparams["num_heads"],
+        )
+
+    elif model_name == "GINREGv0.1":
         model_ = GINREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
@@ -198,7 +269,11 @@ def main(rank, world_size):
             deg=deg,
         )
 
-    elif model_name == "GATREGv0.1":
+    elif (
+        model_name == "GATREGv0.1"
+        or model_name == "GATREGv0.1small"
+        or model_name == "GATREGv0.1med"
+    ):
         model_ = GATREG(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
@@ -225,15 +300,17 @@ def main(rank, world_size):
     model_ = model_.to(rank)
 
     if world_size is not None:
-        model = DDP(model_, device_ids=[rank])
+        model = DDP(model_, device_ids=[rank], find_unused_parameters=True)
     else:
         model = model_
 
-    wandb.watch(model, log_freq=1000)
+    if rank == 0 or rank is None:
+        wandb.watch(model, log_freq=1000)
 
     params = sum(p.numel() for p in model.parameters())
     print(f"Num parameters: {params}")
-    wandb.run.summary["num_params"] = params
+    if rank == 0 or rank is None:
+        wandb.run.summary["num_params"] = params
 
     # put entire loader onto device
     # tr_loader.dataset.data.to(device)
@@ -243,13 +320,13 @@ def main(rank, world_size):
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
 
     # Attempts to restore the latest checkpoint if exists (only if running single experiment)
-    if get_config("sweep") == 0:
+    if get_config("sweep") == 0 and rank is None:
         print("Loading checkpoint...")
         config_pth = get_config("model.checkpoint")
         pth = (
             f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}'
             if config_pth.lower() == "auto"
-            else config_path
+            else config_pth
         )
         if os.path.exists(pth):
             model, start_epoch = restore_checkpoint(model, pth)
@@ -263,15 +340,17 @@ def main(rank, world_size):
     tr_loader.dataset.data.to(rank)  # TODO: do this earlier for both tr and va
     threshold = calc_threshold(percentile, tr_loader.dataset)
     print(f"Threshold with chosen percentile {percentile} is {threshold}")
-    wandb.run.summary["threshold"] = threshold
+    if rank == 0 or rank is None:
+        wandb.run.summary["threshold"] = threshold
 
     # exp weighing
     exp_weighing = hyperparams["exp_weighing"]
 
     # Evaluate model
-    _evaluate_epoch(
-        va_loader, model, rank, threshold, exp_weighing
-    )  # training loss and accuracy for training is 0 first
+    # if rank == 0 or rank is None:
+    #     _evaluate_epoch(
+    #         va_loader, model, rank, threshold, exp_weighing
+    #     )  # training loss and accuracy for training is 0 first
 
     # Loop over the entire dataset multiple times
     best_val_loss = float("inf")
@@ -279,70 +358,80 @@ def main(rank, world_size):
     for epoch in range(start_epoch, hyperparams["num_epochs"]):
         # Train model
         train_loss = _train_epoch(tr_loader, model, optimizer, rank, exp_weighing)
+        if rank is not None:
+            train_loss *= world_size
         print(f"Train loss for epoch {epoch} is {train_loss}.")
 
-        # Evaluate model
-        (
-            val_loss,
-            pearson_coef,
-            r2,
-            spearman,
-            kendall,
-            mae,
-            acc_score,
-            balanced_acc_score,
-            f1,
-            recall,
-            precision,
-        ) = _evaluate_epoch(va_loader, model, rank, threshold, exp_weighing)
+        dist.barrier()
 
-        print(f"Val loss for epoch {epoch} is {val_loss}.")
+        if (rank == 0 or rank is None) and (epoch % 10 == 0):  # get val every 10 epocs
+            # Evaluate model
+            (
+                val_loss,
+                pearson_coef,
+                r2,
+                spearman,
+                kendall,
+                mae,
+                acc_score,
+                balanced_acc_score,
+                f1,
+                recall,
+                precision,
+            ) = _evaluate_epoch(va_loader, model, rank, threshold, exp_weighing)
 
-        # update if best val loss
-        if val_loss <= best_val_loss:
-            best_val_loss = val_loss
-            wandb.run.summary["best_val_loss"] = val_loss
-            wandb.run.summary["best_val_loss_epoch"] = epoch
+            print(f"Val loss for epoch {epoch} is {val_loss}.")
 
-        # Call logger
-        wandb.log(
-            {
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "r2_score": r2,
-                "spearman": spearman,
-                "kendall": kendall,
-                "pearson": pearson_coef,
-                "MAE": mae,
-                "acc_score": acc_score,
-                "balanced_acc_score": balanced_acc_score,
-                "f1": f1,
-                "recall": recall,
-                "precision": precision,
-            }
-        )
+            # update if best val loss
+            if val_loss <= best_val_loss:
+                best_val_loss = val_loss
+                if rank == 0 or rank is None:
+                    wandb.run.summary["best_val_loss"] = val_loss
+                    wandb.run.summary["best_val_loss_epoch"] = epoch
 
-        # Save model parameters
-        if get_config("sweep") == 0:
-            config_pth = get_config("model.checkpoint")
-            pth = (
-                f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}'
-                if config_pth.lower() == "auto"
-                else config_pth
+            # Call logger
+            wandb.log(
+                {
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "r2_score": r2,
+                    "spearman": spearman,
+                    "kendall": kendall,
+                    "pearson": pearson_coef,
+                    "MAE": mae,
+                    "acc_score": acc_score,
+                    "balanced_acc_score": balanced_acc_score,
+                    "f1": f1,
+                    "recall": recall,
+                    "precision": precision,
+                }
             )
-            if not os.path.exists(pth):
-                os.makedirs(pth, exist_ok=False)
-            save_checkpoint(model, epoch + 1, pth)
 
+            # Save model parameters
+            if get_config("sweep") == 0:
+                config_pth = get_config("model.checkpoint")
+                pth = (
+                    f'checkpoints/{get_config("model.name")}_exp{get_config("model.exp_weighing")}'
+                    if config_pth.lower() == "auto"
+                    else config_pth
+                )
+                if not os.path.exists(pth):
+                    os.makedirs(pth, exist_ok=False)
+                save_checkpoint(model, epoch + 1, pth)
+
+        dist.barrier()
+
+    cleanup()
+    wandb.finish()
     print("Finished Training")
 
 
 if __name__ == "__main__":
-    RUN_WITH_MP = False
+    RUN_WITH_MP = True
 
     if RUN_WITH_MP:
         WANDB_START_METHOD = "thread"
-        world_size = 1
+        world_size = 8
         mp.spawn(main, args=(world_size,), nprocs=world_size, join=True)
     else:
         main(None, None)
