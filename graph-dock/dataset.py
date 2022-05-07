@@ -22,21 +22,23 @@ from torch_geometric.loader import DataLoader
 from utils import get_config, suppress_stdout_stderr
 
 
-def get_train_val_test_loaders(batch_size):
-    tr, va, te = get_train_val_test_dataset()
+def get_train_val_test_loaders(batch_size, transform=None):
+
+    tr, va, te = get_train_val_test_dataset(transform)
 
     tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, pin_memory=False)
     va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, pin_memory=False)
     te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, pin_memory=False)
 
+
     return tr_loader, va_loader, te_loader
 
 
-def get_train_val_test_dataset():
+def get_train_val_test_dataset(transform=None):
     root = os.path.join(get_config("data_dir"), get_config("dataset_id"))
-    tr = ChemDataset(root, "train")
-    va = ChemDataset(root, "val")
-    te = ChemDataset(root, "test")
+    tr = ChemDataset(root, "train", transform=transform)
+    va = ChemDataset(root, "val", transform=transform)
+    te = ChemDataset(root, "test", transform=transform)
 
     return tr, va, te
 
