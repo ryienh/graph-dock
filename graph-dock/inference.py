@@ -49,7 +49,11 @@ def _get_model(tr_dataset):
             deg=deg,
         )
 
-    elif model_name == "GATREGv0.1":
+    elif (
+        model_name == "GATREGv0.1"
+        or model_name == "GATREGv0.1small"
+        or model_name == "GATREGv0.1med"
+    ):
         model = GATREG(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
