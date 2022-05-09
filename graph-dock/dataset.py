@@ -18,6 +18,7 @@ import torch
 from torch_geometric.utils import from_networkx
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.loader import DataLoader
+from temp import from_smiles
 
 from utils import get_config, suppress_stdout_stderr
 
@@ -29,7 +30,6 @@ def get_train_val_test_loaders(batch_size, transform=None):
     tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, pin_memory=False)
     va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, pin_memory=False)
     te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, pin_memory=False)
-
 
     return tr_loader, va_loader, te_loader
 
@@ -224,6 +224,16 @@ class ChemDataset(InMemoryDataset):
         return X
 
     def _smiles_2_graph(self, smiles_list):
+        """
+        Converts list of smiles strings to pyg graph
+        """
+        X = []
+        for molecule in tqdm.tqdm(smiles_list):
+            X.append(from_smiles(molecule, with_hydrogen=False, kekulize=False))
+
+        return X
+
+    def _smiles_2_graph_old(self, smiles_list):
         """
         Converts list of smiles strings to Pytorch geometric graphs
         """
