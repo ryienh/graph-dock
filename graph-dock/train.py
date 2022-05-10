@@ -81,6 +81,7 @@ def _train_epoch(data_loader, model, optimizer, rank, exp_weighing):
 
     for X in tqdm.tqdm(data_loader):
 
+        X.y = X.y.to(torch.float32)
         X = X.to(rank)  # FIXME: fix dataloading issue
 
         # clear parameter gradients
@@ -115,8 +116,8 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
     with torch.no_grad():
 
         for X in tqdm.tqdm(val_loader):
-
             X = X.to(rank)
+            X.y = X.y.to(torch.float32)
 
             logits = model(X)
             prediction = torch.squeeze(logits)
@@ -158,6 +159,7 @@ def main(rank, world_size):
     torch.manual_seed(100)
     random.seed(100)
     np.random.seed(100)
+    # torch.use_deterministic_algorithms(True)
 
     # init wandb logger
     if rank == 0 or rank is None:
@@ -250,6 +252,14 @@ def main(rank, world_size):
             heads=hyperparams["num_heads"],
         )
 
+    elif model_name == "FiLMRegv0.1":
+        model_ = FiLMReg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
     elif model_name == "GINREGv0.1":
         model_ = GINREG(
             input_dim=hyperparams["node_feature_size"],
@@ -296,7 +306,7 @@ def main(rank, world_size):
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
-    model_ = model_.to(torch.float64)
+    model_ = model_.to(torch.float32)
     model_ = model_.to(rank)
 
     if world_size is not None:
@@ -361,7 +371,6 @@ def main(rank, world_size):
         if rank is not None:
             train_loss *= world_size
         print(f"Train loss for epoch {epoch} is {train_loss}.")
-
         dist.barrier()
 
         if (rank == 0 or rank is None) and (epoch % 10 == 0):  # get val every 10 epocs
