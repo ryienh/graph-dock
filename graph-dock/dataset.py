@@ -15,32 +15,57 @@ from pysmiles import read_smiles
 from mendeleev import element
 
 import torch
+import torch_geometric
 from torch_geometric.utils import from_networkx
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.loader import DataLoader
-from temp import from_smiles
+from temp import from_smiles, VirtualNode
+
 
 from utils import get_config, suppress_stdout_stderr
 
 
-def get_train_val_test_loaders(batch_size, transform=None):
+def get_train_val_test_loaders(batch_size, transform=None, full_inf=False):
 
-    tr, va, te = get_train_val_test_dataset(transform)
+    if full_inf is False:
 
-    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, pin_memory=False)
-    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, pin_memory=False)
-    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, pin_memory=False)
+        tr, va, te = get_train_val_test_dataset(transform)
 
-    return tr_loader, va_loader, te_loader
+        tr_loader = DataLoader(
+            tr, batch_size=batch_size, shuffle=True, pin_memory=False
+        )
+        va_loader = DataLoader(
+            va, batch_size=batch_size, shuffle=False, pin_memory=False
+        )
+        te_loader = DataLoader(
+            te, batch_size=batch_size, shuffle=False, pin_memory=False
+        )
+
+        return tr_loader, va_loader, te_loader
+
+    else:
+        _, _, te = get_train_val_test_dataset(transform, full_inf=True)
+        te_loader = DataLoader(
+            te, batch_size=batch_size, shuffle=False, pin_memory=False
+        )
+
+        return te_loader, None, None
 
 
-def get_train_val_test_dataset(transform=None):
+def get_train_val_test_dataset(transform=None, full_inf=False):
+
     root = os.path.join(get_config("data_dir"), get_config("dataset_id"))
-    tr = ChemDataset(root, "train", transform=transform)
-    va = ChemDataset(root, "val", transform=transform)
-    te = ChemDataset(root, "test", transform=transform)
 
-    return tr, va, te
+    if full_inf is False:
+        tr = ChemDataset(root, "train", transform=transform)
+        va = ChemDataset(root, "val", transform=transform)
+        te = ChemDataset(root, "test", transform=transform)
+
+        return tr, va, te
+
+    else:
+        te = ChemDataset(root, "test", transform=transform)
+        return None, None, te
 
 
 class ChemDataset(InMemoryDataset):
@@ -306,6 +331,11 @@ class ChemDataset(InMemoryDataset):
 # test dataset.py
 if __name__ == "__main__":
     print("Processing dataset...")
+
+    data_transform = torch_geometric.transforms.Compose([VirtualNode()])
+
     tr_loader, val_loader, test_loader = get_train_val_test_loaders(
-        batch_size=get_config("model.batch_size")
+        batch_size=get_config("model.batch_size"),
+        transform=data_transform,
+        full_inf=True,
     )

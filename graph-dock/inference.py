@@ -26,57 +26,63 @@ from model import *
 from utils import get_degree_hist
 
 
-def _get_model(tr_dataset):
+def _get_model():
 
     model_name = get_config("model.name")
 
-    if model_name == "GINREGv0.1":
-        model = GINREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
+    if model_name == "NovelRegv0.1":
+        model_ = NovelReg(
+            input_dim=get_config("node_feature_size"),
+            hidden_dim=get_config("hidden_dim"),
+            dropout=get_config("dropout"),
+            num_conv_layers=get_config("num_conv_layers"),
+            heads=get_config("num_heads"),
         )
 
-    elif model_name == "PNAREGv0.1":
-        deg = get_degree_hist(tr_dataset.dataset)
-        # deg.to(device)
-        model = PNAREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            deg=deg,
+    elif model_name == "FiLMRegv0.1":
+        model_ = FiLMReg(
+            input_dim=get_config("node_feature_size"),
+            hidden_dim=get_config("hidden_dim"),
+            dropout=get_config("dropout"),
+            num_conv_layers=get_config("num_conv_layers"),
         )
 
+    elif model_name == "GINREGv0.1":
+        model_ = GINREG(
+            input_dim=get_config("node_feature_size"),
+            hidden_dim=get_config("hidden_dim"),
+            dropout=get_config("dropout"),
+            num_conv_layers=get_config("num_conv_layers"),
+        )
+        
     elif (
         model_name == "GATREGv0.1"
         or model_name == "GATREGv0.1small"
         or model_name == "GATREGv0.1med"
     ):
-        model = GATREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            heads=get_config("model.num_heads"),
+        model_ = GATREG(
+            input_dim=get_config("node_feature_size"),
+            hidden_dim=get_config("hidden_dim"),
+            dropout=get_config("dropout"),
+            num_conv_layers=get_config("num_conv_layers"),
+            heads=get_config("num_heads"),
         )
 
     elif model_name == "AttentiveFPREGv0.1":
-        model = AttentiveFPREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            num_out_channels=get_config("model.output_dim"),
+        model_ = AttentiveFPREG(
+            input_dim=get_config("node_feature_size"),
+            hidden_dim=get_config("hidden_dim"),
+            dropout=get_config("dropout"),
+            num_conv_layers=get_config("num_conv_layers"),
+            num_out_channels=get_config("output_dim"),
             edge_dim=1,
-            num_timesteps=get_config("model.num_timesteps"),
+            num_timesteps=get_config("num_timesteps"),
         )
 
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
-    return model
+    return model_
 
 
 def _forward_inference(loader, model, device):
@@ -124,16 +130,24 @@ def main():
 
     print("Loading trained model...")
 
+    FULL_INF = True
+
+    if FULL_INF:
     # get validation set
     tr_loader, va_loader, _ = get_train_val_test_loaders(
         batch_size=get_config("model.batch_size")
     )
 
+    else:
+        _, _, te_loader = get_train_val_test_loaders(batch_size=get_config("model.batch_size"))
+
+    loader = va_loader if FULL_INF else te_loader
+
     # define model, task
-    model = _get_model(tr_loader)
+    model = _get_model()
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(torch.float64)
-    model = model.to(device)
+    model = model.to(torch.float32)
+    model = model.to(device) # single gpu for inf
 
     config_pth = get_config("model.checkpoint")
     pth = (
@@ -156,7 +170,7 @@ def main():
         spearman,
         kendall,
         mae,
-    ) = _forward_inference(va_loader, model, device)
+    ) = _forward_inference(loader, model, device)
 
     # print loss, other metrics
     print(f"Loss: {val_loss}.")
@@ -170,12 +184,22 @@ def main():
     name = get_config("model.name")
     weight = str(get_config("model.exp_weighing"))
     weight.replace(".", "-")
-    np.savetxt(
-        f"./outputs/{name}_exp{weight}_labels.csv", labels, delimiter=",", fmt="%f"
-    )
-    np.savetxt(
-        f"./outputs/{name}_exp{weight}_preds.csv", preds, delimiter=",", fmt="%f"
-    )
+
+    if FULL_INF is False:
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_labels.csv", labels, delimiter=",", fmt="%f"
+        )
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_preds.csv", preds, delimiter=",", fmt="%f"
+        )
+    
+    else:
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_labels_FI.csv", labels, delimiter=",", fmt="%f"
+        )
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_preds_FI.csv", preds, delimiter=",", fmt="%f"
+        )       
 
 
 if __name__ == "__main__":
