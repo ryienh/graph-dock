@@ -9,6 +9,8 @@ from torch_geometric.nn import (
     SAGPooling,
 )
 
+from filmv2Conv import FiLMv2Conv
+
 
 """
 Graph convolutional network for graph regression task
@@ -67,16 +69,60 @@ class AttentiveFPREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label, exp_weighing=0):
 
-        # vanilla mse loss if no coef given
-        if exp_weighing == 0:
-            return torch.nn.functional.mse_loss(pred, label)
+class FiLMReg(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers, v2=True):
 
-        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
-        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1 * exp_weighing * label)
-        return (weights * out).mean()
+        super(FiLMReg, self).__init__()
+
+        self.dropout = dropout
+        self.num_layers = num_conv_layers
+
+        self.usev2 = v2
+
+        self.convs = torch.nn.ModuleList()
+        self.convs.append(self.build_conv_model(input_dim, hidden_dim))
+        self.lns = torch.nn.ModuleList()
+        for _ in range(self.num_layers):
+            self.convs.append(self.build_conv_model(hidden_dim, hidden_dim))
+            self.lns.append(
+                torch.nn.LayerNorm(hidden_dim)
+            )  # one less lns than conv bc no lns after final conv
+
+        self.conv_dropout = torch.nn.Dropout(p=self.dropout)
+        self.ReLU = torch.nn.ReLU()
+
+        # post-message-passing
+        self.post_mp = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, 1),
+        )
+
+    def build_conv_model(self, input_dim, hidden_dim):
+        if self.usev2 is False:
+            return FiLMConv(in_channels=input_dim, out_channels=hidden_dim)
+        else:
+            return FiLMv2Conv(in_channels=input_dim, out_channels=hidden_dim)
+
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = x.to(torch.float32)
+        edge_index = edge_index.to(torch.long)
+        if data.num_node_features == 0:
+            print("Warning: No node features detected.")
+            x = torch.ones(data.num_nodes, 1)
+
+        for i in range(self.num_layers):
+            x = self.convs[i](x, edge_index)
+            # emb = x
+            x = self.ReLU(x)
+            x = self.conv_dropout(x)
+            if not i == self.num_layers - 1:
+                x = self.lns[i](x)
+
+        x = global_mean_pool(x, batch)
+        x = self.post_mp(x)
+
+        return x
 
 
 class NovelReg(torch.nn.Module):
@@ -112,13 +158,18 @@ class NovelReg(torch.nn.Module):
     def build_conv_model(self, input_dim, hidden_dim, heads, idx):
         if idx % 2 == 0:
             return GATv2Conv(
-                in_channels=input_dim, out_channels=hidden_dim, heads=heads, concat=False
+                in_channels=input_dim,
+                out_channels=hidden_dim,
+                heads=heads,
+                concat=False,
             )
-        else: 
+        else:
             return FiLMConv(in_channels=input_dim, out_channels=hidden_dim)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = x.to(torch.float32)
+        edge_index = edge_index.to(torch.long)
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
             x = torch.ones(data.num_nodes, 1)
@@ -135,17 +186,6 @@ class NovelReg(torch.nn.Module):
         x = self.post_mp(x)
 
         return x
-
-    def loss(self, pred, label, exp_weighing=0):
-
-        # vanilla mse loss if no coef given
-        if exp_weighing == 0:
-            return torch.nn.functional.mse_loss(pred, label)
-
-        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
-        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1 * exp_weighing * label)
-        return (weights * out).mean()
 
 
 class GATREG(torch.nn.Module):
@@ -180,6 +220,8 @@ class GATREG(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = x.to(torch.float32)
+        edge_index = edge_index.to(torch.long)
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
             x = torch.ones(data.num_nodes, 1)
@@ -196,17 +238,6 @@ class GATREG(torch.nn.Module):
         x = self.post_mp(x)
 
         return x
-
-    def loss(self, pred, label, exp_weighing=0):
-
-        # vanilla mse loss if no coef given
-        if exp_weighing == 0:
-            return torch.nn.functional.mse_loss(pred, label)
-
-        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
-        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1 * exp_weighing * label)
-        return (weights * out).mean()
 
 
 class PNAREG(torch.nn.Module):
@@ -265,17 +296,6 @@ class PNAREG(torch.nn.Module):
 
         return x
 
-    def loss(self, pred, label, exp_weighing=0):
-
-        # vanilla mse loss if no coef given
-        if exp_weighing == 0:
-            return torch.nn.functional.mse_loss(pred, label)
-
-        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
-        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1 * exp_weighing * label)
-        return (weights * out).mean()
-
 
 class GINREG(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, dropout, num_conv_layers):
@@ -297,8 +317,6 @@ class GINREG(torch.nn.Module):
         self.conv_dropout = torch.nn.Dropout(p=self.dropout)
         self.ReLU = torch.nn.ReLU()
 
-        self.sagpool = SAGPooling(hidden_dim, ratio=0.25)
-
         # post-message-passing
         self.post_mp = torch.nn.Sequential(
             torch.nn.Linear(hidden_dim, 1),
@@ -315,6 +333,8 @@ class GINREG(torch.nn.Module):
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = x.to(torch.float32)
+        edge_index = edge_index.to(torch.long)
         if data.num_node_features == 0:
             print("Warning: No node features detected.")
             x = torch.ones(data.num_nodes, 1)
@@ -327,24 +347,7 @@ class GINREG(torch.nn.Module):
             if not i == self.num_layers - 1:
                 x = self.lns[i](x)
 
-        # pooling
-        x, edge_index, _, batch, _, _ = self.sagpool(x, edge_index, batch=batch)
-
-        x, edge_index, _, batch, _, _ = self.sagpool(x, edge_index, batch=batch)
         x = global_mean_pool(x, batch)
-
-        # MLP
         x = self.post_mp(x)
 
         return x
-
-    def loss(self, pred, label, exp_weighing=0):
-
-        # vanilla mse loss if no coef given
-        if exp_weighing == 0:
-            return torch.nn.functional.mse_loss(pred, label)
-
-        # else calculate unreduced (per datapoint) mse loss, calc weights, return mean
-        out = torch.nn.functional.mse_loss(pred, label, reduction="none")
-        weights = torch.exp(-1 * exp_weighing * label)
-        return (weights * out).mean()
