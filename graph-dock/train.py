@@ -426,7 +426,11 @@ def main(rank, world_size):
                 )
                 if not os.path.exists(pth):
                     os.makedirs(pth, exist_ok=False)
-                save_checkpoint(model, epoch + 1, pth)
+
+                if rank is None:
+                    save_checkpoint(model, epoch + 1, pth, parallel=False)
+                else:
+                    save_checkpoint(model, epoch + 1, pth, parallel=True)
 
         dist.barrier()
 
