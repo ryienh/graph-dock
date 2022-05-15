@@ -133,8 +133,8 @@ class FiLMv6Conv(MessagePassing):
         beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
 
         # tanh version
-        beta = self.tanh(beta)
-        gamma = self.tanh(gamma)
+        beta = self.relu(beta)
+        gamma = self.relu(gamma)
 
         out = gamma * self.lin_skip(x[1]) + beta
         # if self.act is not None:
@@ -144,8 +144,8 @@ class FiLMv6Conv(MessagePassing):
         if self.num_relations <= 1:
             beta, gamma = self.films[0](x[1]).split(self.out_channels, dim=-1)
             # tanh version
-            beta = self.tanh(beta)
-            gamma = self.tanh(gamma)
+            beta = self.relu(beta)
+            gamma = self.relu(gamma)
             out = out + self.propagate(
                 edge_index,
                 x=self.lins[0](x[0]),
