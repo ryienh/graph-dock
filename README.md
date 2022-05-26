@@ -44,8 +44,6 @@ Note that this script also depends on the `./graph-dock/config.json` file, which
 
 Our model achieves the following performance on a witheld test partition of the ZINC dataset:
 
-### [Image Classification on ImageNet](https://paperswithcode.com/sota/image-classification-on-imagenet)
-
 | Model name | W-MSE | RES Score |
 | ---------- | ----- | --------- |
 | GIN        | 0.402 | 0.742     |
