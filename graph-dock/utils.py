@@ -1,7 +1,5 @@
 """
 Collection of utility functions for training and evaluation scripts.
-
-For questions or comments, contact rhosseini@anl.gov
 """
 import os
 import torch
@@ -106,7 +104,7 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
             return model, 0
 
     # Find latest epoch
-    patience = 11  # FIXME: fix hardcode
+    patience = 11
     counter = 0
     for i in itertools.count(1):
         if counter == patience:
@@ -195,8 +193,7 @@ def calc_threshold(percentile, train_dataset):
     if percentile == "none" or percentile == "None" or percentile == "NONE":
         return None
 
-    # FIXME: optimize
-    labels = []  # FIXME: fix cuda hardcode
+    labels = []
     for data in train_dataset:
         labels.append(data.y)
 

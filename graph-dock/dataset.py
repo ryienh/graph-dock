@@ -95,9 +95,6 @@ class ChemDataset(InMemoryDataset):
         # Note: currently processess all partitions if one is missing
         return ["train.pt", "val.pt", "test.pt"]
 
-    # TODO: implement auto download of dataset
-    # def download(self):
-
     def process(self):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -173,7 +170,6 @@ class ChemDataset(InMemoryDataset):
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
 
-        # store dictionary of chem names -> graphs #TODO: implement this for inference
         X = df["smiles"]
         y = df["dockscore"]
         X = X.to_numpy()
@@ -185,7 +181,6 @@ class ChemDataset(InMemoryDataset):
             np.var(y[~np.isnan(y)])
         )
 
-        # clip labels to (max) TODO: check this with Austin
         max_scaled_label = np.max(y[y_raw <= 0])
         y[y_raw > 0] = max_scaled_label
 
@@ -212,7 +207,6 @@ class ChemDataset(InMemoryDataset):
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
 
-        # store dictionary of chem names -> graphs #TODO: implement this for inference
         X = df["smiles"]
         y = df["dockscore"]
         X = X.to_numpy()
@@ -227,7 +221,6 @@ class ChemDataset(InMemoryDataset):
         # flip labels
         y = -1 * y
 
-        # clip labels to (max) TODO: check this with Austin
         min_scaled_label = np.min(y[y_raw <= 0])
         y[y_raw > 0] = min_scaled_label
 

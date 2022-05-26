@@ -198,13 +198,13 @@ def main():
 
     else:
         np.savetxt(
-            f"./outputs/RHO_100k_{name}_exp{weight}_labels_FI_{chunk}.csv",
+            f"./outputs/{name}_exp{weight}_labels_FI_{chunk}.csv",
             labels,
             delimiter=",",
             fmt="%f",
         )
         np.savetxt(
-            f"./outputs/RHO_100k_{name}_exp{weight}_preds_FI_{chunk}.csv",
+            f"./outputs/{name}_exp{weight}_preds_FI_{chunk}.csv",
             preds,
             delimiter=",",
             fmt="%f",
