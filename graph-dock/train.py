@@ -159,10 +159,10 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
 def main(rank, world_size):
 
-    # seed everything -- warning cuDNN, dataloaders, scat/gath ops not seeded
-    torch.manual_seed(100)
-    random.seed(100)
-    np.random.seed(100)
+    # seed everything -- warning cuDNN, dataloaders, scat/gath ops not seeded -- 100 was what was used for most
+    torch.manual_seed(442)
+    random.seed(442)
+    np.random.seed(442)
     # torch.use_deterministic_algorithms(True)
 
     # init wandb logger
