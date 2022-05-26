@@ -91,9 +91,9 @@ class FiLMv6Conv(MessagePassing):
         self.num_relations = max(num_relations, 1)
         self.act = act
         # temp
-        self.relu = torch.nn.ReLU()
-        self.tanh = torch.nn.Tanh()
-        self.sigmoid = torch.nn.Sigmoid()
+        # self.relu = torch.nn.ReLU()
+        # self.tanh = torch.nn.Tanh()
+        # self.sigmoid = torch.nn.Sigmoid()
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -130,11 +130,11 @@ class FiLMv6Conv(MessagePassing):
         if isinstance(x, Tensor):
             x: PairTensor = (x, x)
 
-        beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
+        beta, gamma = self.act(self.film_skip(x[1])).split(self.out_channels, dim=-1)
 
-        # tanh version
-        beta = self.relu(beta)
-        gamma = self.relu(gamma)
+        # # tanh version
+        # beta = self.relu(beta)
+        # gamma = self.relu(gamma)
 
         out = gamma * self.lin_skip(x[1]) + beta
         # if self.act is not None:
@@ -142,10 +142,10 @@ class FiLMv6Conv(MessagePassing):
 
         # propagate_type: (x: Tensor, beta: Tensor, gamma: Tensor)
         if self.num_relations <= 1:
-            beta, gamma = self.films[0](x[1]).split(self.out_channels, dim=-1)
+            beta, gamma = self.act(self.films[0](x[1])).split(self.out_channels, dim=-1)
             # tanh version
-            beta = self.relu(beta)
-            gamma = self.relu(gamma)
+            # beta = self.relu(beta)
+            # gamma = self.relu(gamma)
             out = out + self.propagate(
                 edge_index,
                 x=self.lins[0](x[0]),

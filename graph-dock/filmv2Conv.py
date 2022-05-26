@@ -125,22 +125,27 @@ class FiLMv2Conv(MessagePassing):
         if isinstance(x, Tensor):
             x: PairTensor = (x, x)
 
+        # changed for sunday OG sanity check
         # beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
-        # out = gamma * self.lin_skip(x[1]) + beta
+        # out = gamma * self.act(self.lin_skip(x[1])) + beta
         # if self.act is not None:
         #     out = self.act(out)
 
+        # OG:
         beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
-        out = self.lin_skip(x[1])
-        if self.act is not None:
-            out = self.act(out)
-        out = gamma * out + beta
+        out = gamma * self.act(self.lin_skip(x[1])) + beta
+        # if self.act is not None:
+        #     out = self.act(out)
 
         # propagate_type: (x: Tensor, beta: Tensor, gamma: Tensor)
         if self.num_relations <= 1:
             beta, gamma = self.films[0](x[1]).split(self.out_channels, dim=-1)
             out = out + self.propagate(
-                edge_index, x=self.lins[0](x[0]), beta=beta, gamma=gamma, size=None
+                edge_index,
+                x=self.act(self.lins[0](x[0])),
+                beta=beta,
+                gamma=gamma,
+                size=None,
             )
         else:
             for i, (lin, film) in enumerate(zip(self.lins, self.films)):
@@ -171,8 +176,9 @@ class FiLMv2Conv(MessagePassing):
 
     def message(self, x_j: Tensor, beta_i: Tensor, gamma_i: Tensor) -> Tensor:
         out = gamma_i * x_j + beta_i
-        if self.act is not None:
-            out = self.act(out)
+        # BELOW COMMENTED OUT FOR OG TEST
+        # if self.act is not None:
+        #     out = self.act(out)
         return out
 
     def __repr__(self) -> str:

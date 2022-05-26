@@ -49,3 +49,22 @@ def preprocess_data(
     random.shuffle(partitions)
     df["partition"] = partitions
     df.to_csv(output_path)
+
+
+def chunkify():
+    # FIXME: fix hardcodes
+    source_path = (
+        "/projects/datascience/rhosseini/graph-dock/data/d4_dock_data_full_inf.csv"
+    )
+
+    for i, chunk in enumerate(pd.read_csv(source_path, chunksize=int(138312676 / 10))):
+        print(f"Saving chunk {i+1}")
+        chunk.to_csv(
+            f"/projects/datascience/rhosseini/graph-dock/data/d4_dock_data_full_inf_chunk_{i}.csv",
+            header=True,
+            index=False,
+        )
+
+
+if __name__ == "__main__":
+    chunkify()

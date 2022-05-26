@@ -125,21 +125,20 @@ class FiLMv3Conv(MessagePassing):
         if isinstance(x, Tensor):
             x: PairTensor = (x, x)
 
-        # beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
-        # out = gamma * self.lin_skip(x[1]) + beta
-        # if self.act is not None:
-        #     out = self.act(out)
-
-        beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
-        out = gamma * self.act(self.lin_skip(x[1])) + beta
+        beta, gamma = self.act(self.film_skip(x[1])).split(self.out_channels, dim=-1)
+        out = gamma * self.lin_skip(x[1]) + beta
         if self.act is not None:
             out = self.act(out)
 
         # propagate_type: (x: Tensor, beta: Tensor, gamma: Tensor)
         if self.num_relations <= 1:
-            beta, gamma = self.films[0](x[1]).split(self.out_channels, dim=-1)
+            beta, gamma = self.act(self.films[0](x[1])).split(self.out_channels, dim=-1)
             out = out + self.propagate(
-                edge_index, x=self.lins[0](x[0]), beta=beta, gamma=gamma, size=None
+                edge_index,
+                x=self.lins[0](x[0]),
+                beta=beta,
+                gamma=gamma,
+                size=None,
             )
         else:
             for i, (lin, film) in enumerate(zip(self.lins, self.films)):

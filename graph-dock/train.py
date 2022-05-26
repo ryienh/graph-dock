@@ -58,6 +58,10 @@ def loss(pred, label, exp_weighing=0):
     return (weights * out).mean()
 
 
+# my_loss = loss(pred, label, exp_weight)
+# my_loss *= exp_weighing
+
+
 def setup(rank, world_size):
     # cleanup()
     os.environ["MASTER_ADDR"] = "localhost"
@@ -253,7 +257,58 @@ def main(rank, world_size):
         )
 
     elif model_name == "FiLMRegv0.1":
+        print("RUNNING v1!!")
         model_ = FiLMReg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.2":
+        print("RUNNING v2!!")
+        model_ = FiLMv2Reg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.3":
+        model_ = FiLMv3Reg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.4":
+        model_ = FiLMv4Reg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.5":
+        model_ = FiLMv5Reg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.6":
+        print("RUNNING v6!!")
+        model_ = FiLMv6Reg(
+            input_dim=hyperparams["node_feature_size"],
+            hidden_dim=hyperparams["hidden_dim"],
+            dropout=hyperparams["dropout"],
+            num_conv_layers=hyperparams["num_conv_layers"],
+        )
+
+    elif model_name == "FiLMRegv0.7":
+        model_ = FiLMv7Reg(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],

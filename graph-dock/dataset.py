@@ -44,12 +44,12 @@ def get_train_val_test_loaders(batch_size, transform=None, full_inf=False):
         return tr_loader, va_loader, te_loader
 
     else:
-        _, _, te = get_train_val_test_dataset(transform, full_inf=True)
+        te = get_train_val_test_dataset(transform, full_inf=True)
         te_loader = DataLoader(
-            te, batch_size=batch_size, shuffle=False, pin_memory=False
+            te, batch_size=batch_size, shuffle=False, pin_memory=True
         )
 
-        return te_loader, None, None
+        return te_loader
 
 
 def get_train_val_test_dataset(transform=None, full_inf=False):
@@ -65,7 +65,7 @@ def get_train_val_test_dataset(transform=None, full_inf=False):
 
     else:
         te = ChemDataset(root, "test", transform=transform)
-        return None, None, te
+        return te
 
 
 class ChemDataset(InMemoryDataset):

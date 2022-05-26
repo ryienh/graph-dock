@@ -20,7 +20,7 @@ def reset(value: Any):
             reset(child)
 
 
-class FiLMv4Conv(MessagePassing):
+class FiLMv7Conv(MessagePassing):
     r"""The FiLM graph convolutional operator from the
     `"GNN-FiLM: Graph Neural Networks with Feature-wise Linear Modulation"
     <https://arxiv.org/abs/1906.12192>`_ paper
@@ -125,14 +125,14 @@ class FiLMv4Conv(MessagePassing):
         if isinstance(x, Tensor):
             x: PairTensor = (x, x)
 
-        beta, gamma = self.act(self.film_skip(x[1])).split(self.out_channels, dim=-1)
+        beta, gamma = self.film_skip(x[1]).split(self.out_channels, dim=-1)
         out = gamma * self.act(self.lin_skip(x[1])) + beta
-        if self.act is not None:
-            out = self.act(out)
+        # if self.act is not None:
+        #     out = self.act(out)
 
         # propagate_type: (x: Tensor, beta: Tensor, gamma: Tensor)
         if self.num_relations <= 1:
-            beta, gamma = self.act(self.films[0](x[1])).split(self.out_channels, dim=-1)
+            beta, gamma = self.films[0](x[1]).split(self.out_channels, dim=-1)
             out = out + self.propagate(
                 edge_index,
                 x=self.act(self.lins[0](x[0])),
@@ -169,8 +169,8 @@ class FiLMv4Conv(MessagePassing):
 
     def message(self, x_j: Tensor, beta_i: Tensor, gamma_i: Tensor) -> Tensor:
         out = gamma_i * x_j + beta_i
-        if self.act is not None:
-            out = self.act(out)
+        # if self.act is not None:
+        #     out = self.act(out)
         return out
 
     def __repr__(self) -> str:
