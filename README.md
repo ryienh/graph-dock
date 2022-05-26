@@ -2,6 +2,8 @@
 
 This repository is the official implementation of Deep Surrogate Docking: Accelerating Automated Drug Discovery with Graph Neural Networks. 
 
+Please note that this is an anonymized version of the codebase for the purposes of review. The full reposity will be made publically available after the review period. 
+
 ## Requirements
 
 To install requirements:
@@ -41,8 +43,6 @@ Note that this script also depends on the `./graph-dock/config.json` file, which
 ## Results
 
 Our model achieves the following performance on a witheld test partition of the ZINC dataset:
-
-### [Image Classification on ImageNet](https://paperswithcode.com/sota/image-classification-on-imagenet)
 
 | Model name | W-MSE | RES Score |
 | ---------- | ----- | --------- |
