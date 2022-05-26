@@ -10,18 +10,15 @@ import numpy as np
 import pandas as pd
 import tqdm
 import os
-from pysmiles import read_smiles
-from mendeleev import element
 
 import torch
 import torch_geometric
-from torch_geometric.utils import from_networkx
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.loader import DataLoader
-from temp import from_smiles, VirtualNode
+from pyg_utils import from_smiles, VirtualNode
 
 
-from utils import get_config, suppress_stdout_stderr
+from utils import get_config
 
 
 def get_train_val_test_loaders(batch_size, transform=None, full_inf=False):

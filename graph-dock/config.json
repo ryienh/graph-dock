@@ -17,5 +17,7 @@
         "num_conv_layers": 4,
         "dropout": 0.1
     },
-    "seed": 100
+    "seed": 100,
+    "full_inference": 0,
+    "train_with_ddp": 1
 }

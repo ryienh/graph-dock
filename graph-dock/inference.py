@@ -1,11 +1,10 @@
 """
 Run inference on trained model
-    Runs inference on trained network on dataset of arbitrary length. Labels and predictions are 
+    Runs inference on trained network on dataset of arbitrary length. Labels and predictions are
     saved to file
     Usage: python3 inference.py
-
-For questions or comments, contact rhosseini@anl.gov
 """
+
 import random
 import torch
 import torch_geometric
@@ -15,38 +14,21 @@ from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import (
     r2_score,
     mean_absolute_error,
-    accuracy_score,
-    balanced_accuracy_score,
-    f1_score,
-    recall_score,
-    precision_score,
 )
 
 from utils import get_config, restore_checkpoint
 from dataset import get_train_val_test_loaders
 from model import *
-from utils import get_degree_hist
 from train import loss
 
-from temp import VirtualNode
-
-chunk = 1
+from pyg_utils import VirtualNode
 
 
 def _get_model():
 
     model_name = get_config("model.name")
 
-    if model_name == "NovelRegv0.1":
-        model_ = NovelReg(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            heads=get_config("model.num_heads"),
-        )
-
-    elif model_name == "FiLMRegv0.1":
+    if model_name == "FiLMRegv0.1":
         model_ = FiLMReg(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
@@ -62,38 +44,6 @@ def _get_model():
             num_conv_layers=get_config("model.num_conv_layers"),
         )
 
-    elif model_name == "FiLMRegv0.3":
-        model_ = FiLMv3Reg(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-        )
-
-    elif model_name == "FiLMRegv0.4":
-        model_ = FiLMv4Reg(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-        )
-
-    elif model_name == "FiLMRegv0.5":
-        model_ = FiLMv5Reg(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-        )
-
-    elif model_name == "FiLMRegv0.6":
-        model_ = FiLMv6Reg(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-        )
-
     elif model_name == "GINREGv0.1":
         model_ = GINREG(
             input_dim=get_config("model.node_feature_size"),
@@ -102,28 +52,13 @@ def _get_model():
             num_conv_layers=get_config("model.num_conv_layers"),
         )
 
-    elif (
-        model_name == "GATREGv0.1"
-        or model_name == "GATREGv0.1small"
-        or model_name == "GATREGv0.1med"
-    ):
+    elif model_name == "GATREGv0.1":
         model_ = GATREG(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
             dropout=get_config("model.dropout"),
             num_conv_layers=get_config("model.num_conv_layers"),
             heads=get_config("model.num_heads"),
-        )
-
-    elif model_name == "AttentiveFPREGv0.1":
-        model_ = AttentiveFPREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            num_out_channels=get_config("model.output_dim"),
-            edge_dim=1,
-            num_timesteps=get_config("model.num_timesteps"),
         )
 
     else:
@@ -149,9 +84,6 @@ def _forward_inference(loader, model, device):
 
                 X = X.to(device)
                 X.y = X.y.to(torch.float32)
-
-                # thresh, _ = torch.sort(X.y)
-                # thresh = thresh[int(X.y.shape[0] / 10)]  # FIXME: fix hardcode
 
                 logits = model(X)
 
@@ -186,10 +118,9 @@ def main():
     random.seed(100)
     np.random.seed(100)
 
-    FULL_INF = False
+    FULL_INF = get_config("full_inference")
 
     data_transform = torch_geometric.transforms.Compose([VirtualNode()])
-    # data_transform = None
     if FULL_INF is False:
         # get validation set
         _, va_loader, _ = get_train_val_test_loaders(
@@ -203,8 +134,6 @@ def main():
             full_inf=True,
         )
 
-    # print("DEBUG")
-    # print(te_loader)
     loader = te_loader if FULL_INF else va_loader
 
     # define model, task

@@ -3,8 +3,6 @@ Train multiple models
     Trains a graph neural network to predict docking score based on subset of docking data
     Periodically outputs training information, and saves model checkpoints
     Usage: python3 train.py
-
-For questions or comments, contact rhosseini@anl.gov
 """
 
 import torch
@@ -36,7 +34,6 @@ from utils import (
     calc_threshold,
 )
 
-# multiprocess imports
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -45,7 +42,6 @@ from torch.utils.data.distributed import DistributedSampler
 from temp import VirtualNode
 
 
-# temp loss function for ddp FIXME
 def loss(pred, label, exp_weighing=0):
 
     # vanilla mse loss if no coef given
@@ -58,12 +54,7 @@ def loss(pred, label, exp_weighing=0):
     return (weights * out).mean()
 
 
-# my_loss = loss(pred, label, exp_weight)
-# my_loss *= exp_weighing
-
-
 def setup(rank, world_size):
-    # cleanup()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
 
@@ -86,16 +77,14 @@ def _train_epoch(data_loader, model, optimizer, rank, exp_weighing):
     for X in tqdm.tqdm(data_loader):
 
         X.y = X.y.to(torch.float32)
-        X = X.to(rank)  # FIXME: fix dataloading issue
+        X = X.to(rank)
 
         # clear parameter gradients
         optimizer.zero_grad()
 
         # forward + backward + optimize
-
         prediction = model(X)
         prediction = torch.squeeze(prediction)
-        # loss = model.loss(prediction, X.y, exp_weighing)
         my_loss = loss(prediction, X.y, exp_weighing)
         my_loss.backward()
         optimizer.step()
@@ -106,7 +95,6 @@ def _train_epoch(data_loader, model, optimizer, rank, exp_weighing):
     running_loss /= len(data_loader.dataset)
 
     return running_loss
-    #
 
 
 def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
@@ -135,7 +123,8 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
         running_loss /= len(val_loader.dataset)
 
-    # TODO check logic: may require two thresholds
+    # NOTE: here a single threshold is used for clf statistics (ie sigma=zeta).
+    # More nuanced analysis, as discussed in the text, can vary both parameters.
     predictions = np.array(predictions)
     labels = np.array(labels)
 
@@ -159,11 +148,10 @@ def _evaluate_epoch(val_loader, model, rank, threshold, exp_weighing):
 
 def main(rank, world_size):
 
-    # seed everything -- warning cuDNN, dataloaders, scat/gath ops not seeded -- 100 was what was used for most
-    torch.manual_seed(442)
-    random.seed(442)
-    np.random.seed(442)
-    # torch.use_deterministic_algorithms(True)
+    seed = get_config("seed")
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
 
     # init wandb logger
     if rank == 0 or rank is None:
@@ -243,21 +231,9 @@ def main(rank, world_size):
         rank = "cuda" if torch.cuda.is_available() else "cpu"
         print("Using device: ", rank)
 
-    # TODO: move model instantiation to diff file
-    # define model, loss function, and optimizer
     model_name = hyperparams["architecture"]
 
-    if model_name == "NovelRegv0.1":
-        model_ = NovelReg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-            heads=hyperparams["num_heads"],
-        )
-
-    elif model_name == "FiLMRegv0.1":
-        print("RUNNING v1!!")
+    if model_name == "FiLMRegv0.1":
         model_ = FiLMReg(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
@@ -266,49 +242,7 @@ def main(rank, world_size):
         )
 
     elif model_name == "FiLMRegv0.2":
-        print("RUNNING v2!!")
         model_ = FiLMv2Reg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-        )
-
-    elif model_name == "FiLMRegv0.3":
-        model_ = FiLMv3Reg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-        )
-
-    elif model_name == "FiLMRegv0.4":
-        model_ = FiLMv4Reg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-        )
-
-    elif model_name == "FiLMRegv0.5":
-        model_ = FiLMv5Reg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-        )
-
-    elif model_name == "FiLMRegv0.6":
-        print("RUNNING v6!!")
-        model_ = FiLMv6Reg(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-        )
-
-    elif model_name == "FiLMRegv0.7":
-        model_ = FiLMv7Reg(
             input_dim=hyperparams["node_feature_size"],
             hidden_dim=hyperparams["hidden_dim"],
             dropout=hyperparams["dropout"],
@@ -323,17 +257,6 @@ def main(rank, world_size):
             num_conv_layers=hyperparams["num_conv_layers"],
         )
 
-    elif model_name == "PNAREGv0.1":
-        deg = get_degree_hist(tr_loader.dataset)
-        deg.to(rank)
-        model_ = PNAREG(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-            deg=deg,
-        )
-
     elif (
         model_name == "GATREGv0.1"
         or model_name == "GATREGv0.1small"
@@ -345,17 +268,6 @@ def main(rank, world_size):
             dropout=hyperparams["dropout"],
             num_conv_layers=hyperparams["num_conv_layers"],
             heads=hyperparams["num_heads"],
-        )
-
-    elif model_name == "AttentiveFPREGv0.1":
-        model_ = AttentiveFPREG(
-            input_dim=hyperparams["node_feature_size"],
-            hidden_dim=hyperparams["hidden_dim"],
-            dropout=hyperparams["dropout"],
-            num_conv_layers=hyperparams["num_conv_layers"],
-            num_out_channels=hyperparams["output_dim"],
-            edge_dim=1,
-            num_timesteps=hyperparams["num_timesteps"],
         )
 
     else:
@@ -372,14 +284,11 @@ def main(rank, world_size):
     if rank == 0 or rank is None:
         wandb.watch(model, log_freq=1000)
 
+    # Get num params
     params = sum(p.numel() for p in model.parameters())
     print(f"Num parameters: {params}")
     if rank == 0 or rank is None:
         wandb.run.summary["num_params"] = params
-
-    # put entire loader onto device
-    # tr_loader.dataset.data.to(device)
-    # va_loader.dataset.data.to(device)
 
     # define optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
@@ -402,7 +311,7 @@ def main(rank, world_size):
 
     # set threshold
     percentile = hyperparams["threshold"]
-    tr_loader.dataset.data.to(rank)  # TODO: do this earlier for both tr and va
+    tr_loader.dataset.data.to(rank)
     threshold = calc_threshold(percentile, tr_loader.dataset)
     print(f"Threshold with chosen percentile {percentile} is {threshold}")
     if rank == 0 or rank is None:
@@ -412,10 +321,8 @@ def main(rank, world_size):
     exp_weighing = hyperparams["exp_weighing"]
 
     # Evaluate model
-    # if rank == 0 or rank is None:
-    #     _evaluate_epoch(
-    #         va_loader, model, rank, threshold, exp_weighing
-    #     )  # training loss and accuracy for training is 0 first
+    if rank == 0 or rank is None:
+        _evaluate_epoch(va_loader, model, rank, threshold, exp_weighing)
 
     # Loop over the entire dataset multiple times
     best_val_loss = float("inf")
@@ -495,7 +402,7 @@ def main(rank, world_size):
 
 
 if __name__ == "__main__":
-    RUN_WITH_MP = True
+    RUN_WITH_MP = get_config("train_with_ddp")
 
     if RUN_WITH_MP:
         WANDB_START_METHOD = "thread"
