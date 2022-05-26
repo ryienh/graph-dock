@@ -27,7 +27,10 @@ from dataset import get_train_val_test_loaders
 from model import *
 from utils import get_degree_hist
 from train import loss
+
 from temp import VirtualNode
+
+chunk = 1
 
 
 def _get_model():
@@ -45,6 +48,46 @@ def _get_model():
 
     elif model_name == "FiLMRegv0.1":
         model_ = FiLMReg(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+        )
+
+    elif model_name == "FiLMRegv0.2":
+        model_ = FiLMv2Reg(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+        )
+
+    elif model_name == "FiLMRegv0.3":
+        model_ = FiLMv3Reg(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+        )
+
+    elif model_name == "FiLMRegv0.4":
+        model_ = FiLMv4Reg(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+        )
+
+    elif model_name == "FiLMRegv0.5":
+        model_ = FiLMv5Reg(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
+        )
+
+    elif model_name == "FiLMRegv0.6":
+        model_ = FiLMv6Reg(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
             dropout=get_config("model.dropout"),
@@ -146,7 +189,7 @@ def main():
     FULL_INF = False
 
     data_transform = torch_geometric.transforms.Compose([VirtualNode()])
-
+    # data_transform = None
     if FULL_INF is False:
         # get validation set
         _, va_loader, _ = get_train_val_test_loaders(
@@ -154,15 +197,22 @@ def main():
         )
 
     else:
-        _, _, te_loader = get_train_val_test_loaders(
-            batch_size=get_config("model.batch_size"), transform=data_transform
+        te_loader = get_train_val_test_loaders(
+            batch_size=get_config("model.batch_size"),
+            transform=data_transform,
+            full_inf=True,
         )
 
+    # print("DEBUG")
+    # print(te_loader)
     loader = te_loader if FULL_INF else va_loader
 
     # define model, task
     model = _get_model()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        print("Error, must use cuda")
+        exit(1)
     model = model.to(torch.float32)
     model = model.to(device)  # single gpu for inf
 
@@ -205,21 +255,30 @@ def main():
 
     if FULL_INF is False:
         np.savetxt(
-            f"./outputs/{name}_exp{weight}_labels.csv", labels, delimiter=",", fmt="%f"
-        )
-        np.savetxt(
-            f"./outputs/{name}_exp{weight}_preds.csv", preds, delimiter=",", fmt="%f"
-        )
-
-    else:
-        np.savetxt(
-            f"./outputs/{name}_exp{weight}_labels_FI.csv",
+            f"./outputs/{name}_exp{weight}_labels.csv",
             labels,
             delimiter=",",
             fmt="%f",
         )
         np.savetxt(
-            f"./outputs/{name}_exp{weight}_preds_FI.csv", preds, delimiter=",", fmt="%f"
+            f"./outputs/{name}_exp{weight}_preds.csv",
+            preds,
+            delimiter=",",
+            fmt="%f",
+        )
+
+    else:
+        np.savetxt(
+            f"./outputs/RHO_100k_{name}_exp{weight}_labels_FI_{chunk}.csv",
+            labels,
+            delimiter=",",
+            fmt="%f",
+        )
+        np.savetxt(
+            f"./outputs/RHO_100k_{name}_exp{weight}_preds_FI_{chunk}.csv",
+            preds,
+            delimiter=",",
+            fmt="%f",
         )
 
 
