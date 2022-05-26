@@ -2,6 +2,8 @@
 
 This repository is the official implementation of Deep Surrogate Docking: Accelerating Automated Drug Discovery with Graph Neural Networks. 
 
+Please note that this is an anonymized version of the codebase for the purposes of review. The full reposity will be made publically available after the review period. 
+
 ## Requirements
 
 To install requirements:
