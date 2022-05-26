@@ -1,3 +1,8 @@
+"""
+This file contains versions of Pytorch Geometric functions that have either been
+modified for optimization, or use an implementaiton from a different pyg version
+"""
+
 import torch
 from torch import Tensor
 
