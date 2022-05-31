@@ -1,21 +1,12 @@
 import torch
 from torch_geometric.nn import (
     GINConv,
-    PNAConv,
-    AttentiveFP,
     FiLMConv,
     GATv2Conv,
     global_mean_pool,
-    SAGPooling,
 )
 
 from filmv2Conv import FiLMv2Conv
-from filmv3Conv import FiLMv3Conv
-from filmv4Conv import FiLMv4Conv
-from filmv5Conv import FiLMv5Conv
-from filmv6Conv import FiLMv6Conv
-from filmv7Conv import FiLMv7Conv
-
 
 """
 Several full model architectures with different graph convolution backbones

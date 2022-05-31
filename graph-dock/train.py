@@ -39,7 +39,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 
-from temp import VirtualNode
+from pyg_utils import VirtualNode
 
 
 def loss(pred, label, exp_weighing=0):
@@ -170,9 +170,7 @@ def main(rank, world_size):
                 num_conv_layers=get_config("model.num_conv_layers"),
                 dropout=get_config("model.dropout"),
                 dataset=get_config("dataset_id"),
-                num_heads=get_config("model.num_heads"),
-                num_timesteps=get_config("model.num_timesteps"),
-                output_dim=get_config("model.output_dim"),
+                seed=get_config("seed"),
             ),
         )
         hyperparams = wandb.config
@@ -190,9 +188,7 @@ def main(rank, world_size):
             num_conv_layers=get_config("model.num_conv_layers"),
             dropout=get_config("model.dropout"),
             dataset=get_config("dataset_id"),
-            num_heads=get_config("model.num_heads"),
-            num_timesteps=get_config("model.num_timesteps"),
-            output_dim=get_config("model.output_dim"),
+            seed=get_config("seed"),
         )
 
     # generate data or load from file
