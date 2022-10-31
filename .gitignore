@@ -2,8 +2,6 @@ data
 .venv
 mycondaenv
 wandb
-outputs
-checkpoints
 .vscode
 */__pycache__/
  *.pyc

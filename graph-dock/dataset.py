@@ -4,41 +4,64 @@ Implements data loading and pre-processing for chemical docking pre-training
     The only front facing function is get_train_val_test_loaders(...), which should be called from the
     training script.
 
-For questions or comments, contact rhosseini@anl.gov
 """
 
 import numpy as np
 import pandas as pd
 import tqdm
 import os
-from pysmiles import read_smiles
-from mendeleev import element
 
 import torch
-from torch_geometric.utils import from_networkx
+import torch_geometric
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.loader import DataLoader
-
-from utils import get_config, suppress_stdout_stderr
-
-
-def get_train_val_test_loaders(batch_size):
-    tr, va, te = get_train_val_test_dataset()
-
-    tr_loader = DataLoader(tr, batch_size=batch_size, shuffle=True, pin_memory=False)
-    va_loader = DataLoader(va, batch_size=batch_size, shuffle=False, pin_memory=False)
-    te_loader = DataLoader(te, batch_size=batch_size, shuffle=False, pin_memory=False)
-
-    return tr_loader, va_loader, te_loader
+from pyg_utils import from_smiles, VirtualNode
 
 
-def get_train_val_test_dataset():
+from utils import get_config
+
+
+def get_train_val_test_loaders(batch_size, transform=None, full_inf=False):
+
+    if full_inf is False:
+
+        tr, va, te = get_train_val_test_dataset(transform)
+
+        tr_loader = DataLoader(
+            tr, batch_size=batch_size, shuffle=True, pin_memory=False
+        )
+        va_loader = DataLoader(
+            va, batch_size=batch_size, shuffle=False, pin_memory=False
+        )
+        te_loader = DataLoader(
+            te, batch_size=batch_size, shuffle=False, pin_memory=False
+        )
+
+        return tr_loader, va_loader, te_loader
+
+    else:
+        te = get_train_val_test_dataset(transform, full_inf=True)
+        te_loader = DataLoader(
+            te, batch_size=batch_size, shuffle=False, pin_memory=True
+        )
+
+        return te_loader
+
+
+def get_train_val_test_dataset(transform=None, full_inf=False):
+
     root = os.path.join(get_config("data_dir"), get_config("dataset_id"))
-    tr = ChemDataset(root, "train")
-    va = ChemDataset(root, "val")
-    te = ChemDataset(root, "test")
 
-    return tr, va, te
+    if full_inf is False:
+        tr = ChemDataset(root, "train", transform=transform)
+        va = ChemDataset(root, "val", transform=transform)
+        te = ChemDataset(root, "test", transform=transform)
+
+        return tr, va, te
+
+    else:
+        te = ChemDataset(root, "test", transform=transform)
+        return te
 
 
 class ChemDataset(InMemoryDataset):
@@ -71,9 +94,6 @@ class ChemDataset(InMemoryDataset):
     def processed_file_names(self):
         # Note: currently processess all partitions if one is missing
         return ["train.pt", "val.pt", "test.pt"]
-
-    # TODO: implement auto download of dataset
-    # def download(self):
 
     def process(self):
 
@@ -110,14 +130,14 @@ class ChemDataset(InMemoryDataset):
         Scales labels to zero mean and unit s.d.
         Stores element type in one-hot encoding with length 10.
         Datapoints with NaN labels are dropped.
-        """
 
-        # TODO: port to pygeo system of transform, pre_transform, pre_filter
+        NOTE: This is the version of preprocessing used in our final results. All other are experimental.
+        """
 
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
 
-        # store dictionary of chem names -> graphs #TODO: implement this for inference
+        # store dictionary of chem names -> graphs
         X = df["smiles"]
         y = df["dockscore"]
         X = X.to_numpy()
@@ -150,7 +170,6 @@ class ChemDataset(InMemoryDataset):
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
 
-        # store dictionary of chem names -> graphs #TODO: implement this for inference
         X = df["smiles"]
         y = df["dockscore"]
         X = X.to_numpy()
@@ -162,7 +181,6 @@ class ChemDataset(InMemoryDataset):
             np.var(y[~np.isnan(y)])
         )
 
-        # clip labels to (max) TODO: check this with Austin
         max_scaled_label = np.max(y[y_raw <= 0])
         y[y_raw > 0] = max_scaled_label
 
@@ -189,7 +207,6 @@ class ChemDataset(InMemoryDataset):
         # select appropriate partition
         df = self.data[self.data.partition == self.partition]
 
-        # store dictionary of chem names -> graphs #TODO: implement this for inference
         X = df["smiles"]
         y = df["dockscore"]
         X = X.to_numpy()
@@ -204,7 +221,6 @@ class ChemDataset(InMemoryDataset):
         # flip labels
         y = -1 * y
 
-        # clip labels to (max) TODO: check this with Austin
         min_scaled_label = np.min(y[y_raw <= 0])
         y[y_raw > 0] = min_scaled_label
 
@@ -223,77 +239,23 @@ class ChemDataset(InMemoryDataset):
 
     def _smiles_2_graph(self, smiles_list):
         """
-        Converts list of smiles strings to Pytorch geometric graphs
+        Converts list of smiles strings to pyg graph
         """
         X = []
         for molecule in tqdm.tqdm(smiles_list):
-
-            # suppresses warnings regarding stereochemistry info
-            with suppress_stdout_stderr():
-                x = read_smiles(
-                    molecule,
-                    explicit_hydrogen=False,
-                    zero_order_bonds=True,
-                    reinterpret_aromatic=True,
-                )
-
-            # cycle through network and preprocess TODO: optimize
-            for idx in range(len(list(x.nodes))):
-
-                # represent element by one hot encoded vector (previously by atomic number)
-                elt = np.zeros(10)  # 9 elts found in d4_50k_v0.2 train set, 1 for other
-                atomic_num = element(x.nodes[idx]["element"]).atomic_number
-                elt[self._get_element_one_hot_index(atomic_num)] = 1
-                x.nodes[idx]["element"] = elt
-
-                # cast aromatic bool to int
-                x.nodes[idx]["aromatic"] = float(int(x.nodes[idx]["aromatic"]))
-
-                # remove stereochemical information - FIXME: discuss sols
-                try:
-                    del x.nodes[idx]["stereo"]
-                except Exception:
-                    pass
-
-            # convert to torch and append to list
-            x = from_networkx(
-                x, group_node_attrs=["element", "charge", "aromatic", "hcount"]
-            )
-
-            X.append(x)
+            X.append(from_smiles(molecule, with_hydrogen=False, kekulize=False))
 
         return X
-
-    def _get_element_one_hot_index(self, atomic_number):
-        # from of d4_50k_v0.2 train set, we have:
-        #         Element Name  Atomic Number     Count
-        # 0       Carbon              6  643122.0
-        # 1     Nitrogen              7  112452.0
-        # 2       Oxygen              8   98763.0
-        # 3     Fluorine              9   15220.0
-        # 4      Silicon             14       2.0
-        # 5       Sulfur             16   12402.0
-        # 6     Chlorine             17    3657.0
-        # 7      Bromine             35    1043.0
-        # 8       Iodine             53      64.0
-
-        # map a known elt to corresponding index, else bin into 9
-        if atomic_number in [6, 7, 8, 9]:
-            return atomic_number - 6
-        if atomic_number == 14:
-            return 4
-        if atomic_number in [16, 17]:
-            return atomic_number - 11
-        if atomic_number == 35:
-            return 7
-        if atomic_number == 53:
-            return 8
-        return 9  # else
 
 
 # test dataset.py
 if __name__ == "__main__":
     print("Processing dataset...")
+
+    data_transform = torch_geometric.transforms.Compose([VirtualNode()])
+
     tr_loader, val_loader, test_loader = get_train_val_test_loaders(
-        batch_size=get_config("model.batch_size")
+        batch_size=get_config("model.batch_size"),
+        transform=data_transform,
+        full_inf=True,
     )

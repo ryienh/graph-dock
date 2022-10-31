@@ -1,56 +1,59 @@
 """
 Run inference on trained model
-    Runs inference on trained network on dataset of arbitrary length. Labels and predictions are 
+    Runs inference on trained network on dataset of arbitrary length. Labels and predictions are
     saved to file
     Usage: python3 inference.py
-
-For questions or comments, contact rhosseini@anl.gov
 """
+
+import random
 import torch
+import torch_geometric
 import tqdm
 import numpy as np
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import (
     r2_score,
     mean_absolute_error,
-    accuracy_score,
-    balanced_accuracy_score,
-    f1_score,
-    recall_score,
-    precision_score,
 )
 
 from utils import get_config, restore_checkpoint
 from dataset import get_train_val_test_loaders
 from model import *
-from utils import get_degree_hist
+from train import loss
+
+from pyg_utils import VirtualNode
 
 
-def _get_model(tr_dataset):
+def _get_model():
 
     model_name = get_config("model.name")
 
-    if model_name == "GINREGv0.1":
-        model = GINREG(
+    if model_name == "FiLMRegv0.1":
+        model_ = FiLMReg(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
             dropout=get_config("model.dropout"),
             num_conv_layers=get_config("model.num_conv_layers"),
         )
 
-    elif model_name == "PNAREGv0.1":
-        deg = get_degree_hist(tr_dataset.dataset)
-        # deg.to(device)
-        model = PNAREG(
+    elif model_name == "FiLMRegv0.2":
+        model_ = FiLMv2Reg(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
             dropout=get_config("model.dropout"),
             num_conv_layers=get_config("model.num_conv_layers"),
-            deg=deg,
+        )
+
+    elif model_name == "GINREGv0.1":
+        model_ = GINREG(
+            input_dim=get_config("model.node_feature_size"),
+            hidden_dim=get_config("model.hidden_dim"),
+            dropout=get_config("model.dropout"),
+            num_conv_layers=get_config("model.num_conv_layers"),
         )
 
     elif model_name == "GATREGv0.1":
-        model = GATREG(
+        model_ = GATREG(
             input_dim=get_config("model.node_feature_size"),
             hidden_dim=get_config("model.hidden_dim"),
             dropout=get_config("model.dropout"),
@@ -58,21 +61,10 @@ def _get_model(tr_dataset):
             heads=get_config("model.num_heads"),
         )
 
-    elif model_name == "AttentiveFPREGv0.1":
-        model = AttentiveFPREG(
-            input_dim=get_config("model.node_feature_size"),
-            hidden_dim=get_config("model.hidden_dim"),
-            dropout=get_config("model.dropout"),
-            num_conv_layers=get_config("model.num_conv_layers"),
-            num_out_channels=get_config("model.output_dim"),
-            edge_dim=1,
-            num_timesteps=get_config("model.num_timesteps"),
-        )
-
     else:
         raise NotImplementedError(f"{model_name} not yet implemented.")
 
-    return model
+    return model_
 
 
 def _forward_inference(loader, model, device):
@@ -84,25 +76,27 @@ def _forward_inference(loader, model, device):
     labels = []
     with torch.no_grad():
 
-        for X in tqdm.tqdm(loader):
+        model = model.eval()
 
-            X = X.to(device)
+        with torch.no_grad():
 
-            thresh, _ = torch.sort(X.y)
-            thresh = thresh[int(X.y.shape[0] / 10)]  # FIXME: fix hardcode
+            for X in tqdm.tqdm(loader):
 
-            logits = model(X)
+                X = X.to(device)
+                X.y = X.y.to(torch.float32)
 
-            prediction = torch.squeeze(logits)
-            loss = model.loss(prediction, X.y, get_config("model.exp_weighing"))
+                logits = model(X)
 
-            # loss calculation
-            running_loss += loss.item() * X.num_graphs
+                prediction = torch.squeeze(logits)
+                my_loss = loss(prediction, X.y, get_config("model.exp_weighing"))
 
-            predictions += prediction.tolist()
-            labels += X.y.tolist()
+                # loss calculation
+                running_loss += my_loss.item() * X.num_graphs
 
-        running_loss /= len(loader.dataset)
+                predictions += prediction.tolist()
+                labels += X.y.tolist()
+
+            running_loss /= len(loader.dataset)
 
     return (
         predictions,
@@ -120,16 +114,36 @@ def main():
 
     print("Loading trained model...")
 
-    # get validation set
-    tr_loader, va_loader, _ = get_train_val_test_loaders(
-        batch_size=get_config("model.batch_size")
-    )
+    torch.manual_seed(100)
+    random.seed(100)
+    np.random.seed(100)
+
+    FULL_INF = get_config("full_inference")
+
+    data_transform = torch_geometric.transforms.Compose([VirtualNode()])
+    if FULL_INF is False:
+        # get validation set
+        _, va_loader, _ = get_train_val_test_loaders(
+            batch_size=get_config("model.batch_size"), transform=data_transform
+        )
+
+    else:
+        te_loader = get_train_val_test_loaders(
+            batch_size=get_config("model.batch_size"),
+            transform=data_transform,
+            full_inf=True,
+        )
+
+    loader = te_loader if FULL_INF else va_loader
 
     # define model, task
-    model = _get_model(tr_loader)
+    model = _get_model()
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(torch.float64)
-    model = model.to(device)
+    if device == "cpu":
+        print("Error, must use cuda")
+        exit(1)
+    model = model.to(torch.float32)
+    model = model.to(device)  # single gpu for inf
 
     config_pth = get_config("model.checkpoint")
     pth = (
@@ -137,6 +151,7 @@ def main():
         if config_pth.lower() == "auto"
         else config_pth
     )
+
     model, _ = restore_checkpoint(model, pth)
     print("Model successfully loaded")
 
@@ -152,7 +167,7 @@ def main():
         spearman,
         kendall,
         mae,
-    ) = _forward_inference(va_loader, model, device)
+    ) = _forward_inference(loader, model, device)
 
     # print loss, other metrics
     print(f"Loss: {val_loss}.")
@@ -166,12 +181,34 @@ def main():
     name = get_config("model.name")
     weight = str(get_config("model.exp_weighing"))
     weight.replace(".", "-")
-    np.savetxt(
-        f"./outputs/{name}_exp{weight}_labels.csv", labels, delimiter=",", fmt="%f"
-    )
-    np.savetxt(
-        f"./outputs/{name}_exp{weight}_preds.csv", preds, delimiter=",", fmt="%f"
-    )
+
+    if FULL_INF is False:
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_labels.csv",
+            labels,
+            delimiter=",",
+            fmt="%f",
+        )
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_preds.csv",
+            preds,
+            delimiter=",",
+            fmt="%f",
+        )
+
+    else:
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_labels_FI_{chunk}.csv",
+            labels,
+            delimiter=",",
+            fmt="%f",
+        )
+        np.savetxt(
+            f"./outputs/{name}_exp{weight}_preds_FI_{chunk}.csv",
+            preds,
+            delimiter=",",
+            fmt="%f",
+        )
 
 
 if __name__ == "__main__":

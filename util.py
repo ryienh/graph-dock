@@ -1,7 +1,6 @@
 """
 Collection of auxiliary utility functions for graph-dock
 
-For questions or comments, contact rhosseini@anl.gov
 """
 import pandas as pd
 import random
@@ -14,7 +13,7 @@ def preprocess_data(
     raw_data_path=os.path.join(
         "./", "data", "d4_table_name_smi_energy_hac_lte_25_title.csv"
     ),
-    output_path=os.path.join("./", "data", "d4_dock_data_50k.csv"),
+    output_path=os.path.join("./", "data", "d4_dock_data_500k.csv"),
 ):
     """
     Formats data from docking data given by Lyu et al (classical docking) paper
@@ -31,7 +30,7 @@ def preprocess_data(
     output_path : os.path
         Location of output data
     """
-    n = sum(1 for line in open(raw_data_path)) - 1  # currently 138,312,677
+    n = sum(1 for line in open(raw_data_path)) - 1
     skip_r = sorted(random.sample(range(1, n + 1), n - sample_size))
     df = pd.read_csv(raw_data_path, skiprows=skip_r)
     df = df.drop(["hac"], axis=1)
@@ -49,3 +48,7 @@ def preprocess_data(
     random.shuffle(partitions)
     df["partition"] = partitions
     df.to_csv(output_path)
+
+
+if __name__ == "__main__":
+    preprocess_data()

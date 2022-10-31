@@ -1,7 +1,5 @@
 """
 Collection of utility functions for training and evaluation scripts.
-
-For questions or comments, contact rhosseini@anl.gov
 """
 import os
 import torch
@@ -71,11 +69,17 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def save_checkpoint(model, epoch, checkpoint_dir):
-    state = {
-        "epoch": epoch,
-        "state_dict": model.state_dict(),
-    }
+def save_checkpoint(model, epoch, checkpoint_dir, parallel=False):
+    if parallel:
+        state = {
+            "epoch": epoch,
+            "state_dict": model.module.state_dict(),
+        }
+    else:
+        state = {
+            "epoch": epoch,
+            "state_dict": model.state_dict(),
+        }
 
     filename = os.path.join(checkpoint_dir, "epoch={}.checkpoint.pth.tar".format(epoch))
     torch.save(state, filename)
@@ -100,11 +104,16 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
             return model, 0
 
     # Find latest epoch
+    patience = 11
+    counter = 0
     for i in itertools.count(1):
-        if "epoch={}.checkpoint.pth.tar".format(i) in files:
-            epoch = i
-        else:
+        if counter == patience:
             break
+        elif "epoch={}.checkpoint.pth.tar".format(i) in files:
+            epoch = i
+            counter = 0
+        else:
+            counter += 1
 
     if not force:
         print(
@@ -133,6 +142,13 @@ def restore_checkpoint(model, checkpoint_dir, cuda=True, force=False, pretrain=F
         checkpoint = torch.load(filename)
     else:
         checkpoint = torch.load(filename, map_location=lambda storage, loc: storage)
+
+    # temp = {}
+    # for key, value in checkpoint["state_dict"].items():
+    #     new_key = key[7:]
+    #     temp[new_key] = value
+
+    # checkpoint["state_dict"] = temp
 
     try:
         if pretrain:
@@ -177,8 +193,7 @@ def calc_threshold(percentile, train_dataset):
     if percentile == "none" or percentile == "None" or percentile == "NONE":
         return None
 
-    # FIXME: optimize
-    labels = []  # FIXME: fix cuda hardcode
+    labels = []
     for data in train_dataset:
         labels.append(data.y)
 
