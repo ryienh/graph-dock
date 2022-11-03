@@ -5,4 +5,5 @@ wandb
 .vscode
 */__pycache__/
  *.pyc
+notebooks
 
