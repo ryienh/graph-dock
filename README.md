@@ -59,6 +59,7 @@ We greatly welcome suggestions and contributions to our code! Please feel free t
 
 If you find our work useful, please cite our work using the following BibTeX:
 
+```
 @inproceedings{deep_surrogate_dock,
   author    = {Hosseini, Ryien and Simini, Filippo and Clyde, Austin and Ramanathan, Arvind},
   title     = {Deep Surrogate Docking: Accelerating Automated Drug Discovery with Graph Neural Networks
@@ -67,3 +68,4 @@ If you find our work useful, please cite our work using the following BibTeX:
   maintitle = {Advances in Neural Information Processing Systems 35 (2022)},
   booktitle = {Workshop on AI for Science: Progress and Promises},
 }
+```
